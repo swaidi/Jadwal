@@ -1,0 +1,1 @@
+Medicine alerts that repeat until you log the dose. Offline, private, Arabic.

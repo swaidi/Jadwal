@@ -148,7 +148,7 @@ textarea{width:100%;min-height:38px;resize:vertical}
 [dir="rtl"] .tag{letter-spacing:0;text-transform:none}
 [dir="rtl"] .day .dn{letter-spacing:0}
 .ltr{direction:ltr;unicode-bidi:isolate}
-.dose{direction:ltr;unicode-bidi:isolate}
+.dose{unicode-bidi:isolate}
 .elder-only{display:none}
 
 /* elderly mode: larger type, one big card per medicine, fewer details */
@@ -168,7 +168,7 @@ html.elder .nav h2{font-size:1.3rem;flex-basis:100%;order:-1}
 .ecard .etime{font-family:var(--font-mono);font-size:1.6rem;font-weight:600;direction:ltr;unicode-bidi:isolate}
 .ecard .eslot{font-size:1.05rem;color:var(--muted);font-weight:700}
 .ecard .ename{font-size:1.6rem;font-weight:700;line-height:1.2}
-.ecard .edose{font-family:var(--font-mono);font-size:2.6rem;font-weight:600;color:var(--c);line-height:1.1;direction:ltr;unicode-bidi:isolate;text-align:start}
+.ecard .edose{font-family:var(--font-mono);font-size:2.6rem;font-weight:600;color:var(--c);line-height:1.1;unicode-bidi:isolate;text-align:start}
 .ecard .enote{font-size:1rem;color:var(--muted)}
 .ecard .ebig{min-height:72px;border-radius:14px;border:none;background:var(--ok);color:var(--surface);font-size:1.4rem;font-weight:700}
 .ecard .erow{display:flex;gap:10px}
@@ -179,7 +179,6 @@ html.elder .nav h2{font-size:1.3rem;flex-basis:100%;order:-1}
 .ecard .estate.warn{background:var(--warn-soft);color:var(--warn)}
 .ecard .estate.none{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
 .ecard.done{opacity:.85}
-[dir="rtl"] .dose,[dir="rtl"] .ecard .edose{direction:rtl}
 
 /* My Notes */
 .notes-btn{background:var(--blue-soft);color:var(--blue);border-color:color-mix(in srgb,var(--blue) 40%,transparent)}

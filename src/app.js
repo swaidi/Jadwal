@@ -19,6 +19,7 @@ const AR = ()=>ui.lang==="ar";
 const tr = s=>{ if(!s) return s; return AR() && DATA_AR[s] ? DATA_AR[s] : s; };
 const doseText = s=>{ if(!s) return s; if(!AR()) return s; if(DATA_AR[s]) return DATA_AR[s]; if(/^no dose$/i.test(s)) return t("no_dose"); return s.replace(/(\d+(?:\.\d+)?)\s*mg\b/gi,"$1 ملغ"); };
 const LOCALE = ()=>AR() ? "ar-u-ca-gregory-nu-latn" : "en-US";
+const doseDir = s=>/[\u0600-\u06FF]/.test(s||"")?"rtl":"ltr";
 const isNoDose = s=>/^(no dose|لا جرعة|بدون جرعة)$/i.test((s||"").trim());
 
 /* ---------- Starting plan: empty; each person adds their own medicines ---------- */
@@ -267,7 +268,7 @@ function renderSlots(){
     const tl=document.createElement("small"); tl.textContent=tr(m.slotLabel)||""; tm.appendChild(tl);
     const nm=document.createElement("div"); nm.className="name"; nm.textContent=nmText;
     const gn=document.createElement("small"); gn.textContent=logged&&e.time?t("logged_at",{t:e.time}):(tr(m.generic)||""); nm.appendChild(gn);
-    const dose=document.createElement("div"); dose.className="dose"+(s.kind==="none"?" nodose":"")+(s.kind==="unknown"?" unk":""); dose.textContent=doseDisplay(s);
+    const dose=document.createElement("div"); dose.className="dose"+(s.kind==="none"?" nodose":"")+(s.kind==="unknown"?" unk":""); dose.textContent=doseDisplay(s); dose.dir=doseDir(dose.textContent);
 
     const act=document.createElement("div"); act.className="act";
     if(logged || s.kind!=="dose"){
@@ -352,7 +353,7 @@ function renderElderSlots(){
     card.append(top,nm);
 
     if(s.kind==="dose"){
-      const ds=document.createElement("div"); ds.className="edose"; ds.textContent=doseText(s.text); card.appendChild(ds);
+      const ds=document.createElement("div"); ds.className="edose"; ds.textContent=doseText(s.text); ds.dir=doseDir(ds.textContent); card.appendChild(ds);
       if(m.instrNote){const n=document.createElement("div");n.className="enote";n.textContent=tr(m.instrNote);card.appendChild(n)}
     }
 
@@ -798,6 +799,11 @@ function timeline(a,b,medF){
   return items.sort((x,y)=>y.at-x.at);
 }
 
+// "1 dose (2 presses)": English needs singular/plural; Arabic wording avoids number agreement.
+function snoozeText(d,p){
+  if(AR()) return t("sum_snooze_detail",{d,p});
+  return (d===1?"1 dose":d+" doses")+" ("+(p===1?"1 press":p+" presses")+")";
+}
 function summary(a,b,medF){
   const now=new Date(), today=atMidnight(now), rows=[];
   const end=b<today?b:today;
@@ -875,7 +881,7 @@ function renderNotes(){
   const tb=el("table",{class:"sumtable"});
   const hr=el("tr"); [t("sum_med"),t("sum_taken"),t("sum_skipped"),t("sum_snoozed"),t("sum_open")].forEach(h=>hr.appendChild(el("th",{text:h}))); tb.appendChild(hr);
   rows.forEach(r=>{ const tr_=el("tr"); const c0=el("td",{text:medName(r.med)}); c0.style.setProperty("--c",cvar(r.med.color)); c0.className="medcell";
-    tr_.append(c0,el("td",{text:String(r.taken)}),el("td",{text:String(r.skipped)}),el("td",{text:r.snoozePress?t("sum_snooze_detail",{d:r.snoozeDoses,p:r.snoozePress}):"0"}),el("td",{text:String(r.open)})); tb.appendChild(tr_); });
+    tr_.append(c0,el("td",{text:String(r.taken)}),el("td",{text:String(r.skipped)}),el("td",{text:r.snoozePress?snoozeText(r.snoozeDoses,r.snoozePress):"0"}),el("td",{text:String(r.open)})); tb.appendChild(tr_); });
   tw.appendChild(tb); v.appendChild(tw);
   v.appendChild(el("p",{class:"foot",text:t("sum_note")}));
 
@@ -972,7 +978,7 @@ function buildReport(lang,a,b,medF,withAudio){
     add("h2",t("rp_summary"));
     const rows=summary(a,b,medF);
     add("table","",{cols:[t("sum_med"),t("sum_taken"),t("sum_skipped"),t("sum_snoozed"),t("sum_open")],widths:[.34,.14,.14,.24,.14],
-      rows:rows.map(r=>[medName(r.med),String(r.taken),String(r.skipped),r.snoozePress?t("sum_snooze_detail",{d:r.snoozeDoses,p:r.snoozePress}):"0",String(r.open)])});
+      rows:rows.map(r=>[medName(r.med),String(r.taken),String(r.skipped),r.snoozePress?snoozeText(r.snoozeDoses,r.snoozePress):"0",String(r.open)])});
     add("small",t("sum_note"));
 
     add("h2",t("rp_notes"));

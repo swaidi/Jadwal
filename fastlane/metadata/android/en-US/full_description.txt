@@ -1,0 +1,31 @@
+Jadwal (جدول, "schedule") reminds you to take each medicine at its time, and keeps reminding you until you answer. It keeps a simple record, lets you add notes, and helps you share an accurate summary with your doctor.
+
+ALERTS YOU WON'T MISS
+• At each dose time, a full-screen alert shows the medicine and dose, with Taken, Snooze and Skip.
+• If you don't answer, it comes back every 10 minutes (you choose the interval) until you do.
+• Works on the lock screen. You can also reply from the notification.
+
+YOUR PLAN, YOUR WAY
+• Add each medicine with its dose, time and start date.
+• Dose changes over time are separate steps: increases, reductions and alternating-day patterns.
+• Mark each step as entered by you, confirmed by your clinician, or still to be confirmed.
+
+NOTES AND A REPORT FOR YOUR DOCTOR
+• After each answer, add a typed or spoken note (up to 2 minutes).
+• My Notes shows taken, skipped, snoozed and unlogged doses for each medicine, with a timeline.
+• Share a PDF report in English or Arabic, with your voice notes in a ZIP file if you wish.
+• Keep a list of questions for your doctor; they are included in the report.
+
+MADE FOR EVERYONE
+• Full Arabic interface, right to left.
+• Elderly mode: larger text and buttons, one clear choice per screen.
+• Short vibration and a clear "Saved ✓" after every action.
+
+PRIVATE BY DESIGN
+• No internet permission, no account, no ads, no analytics.
+• Everything stays on your phone.
+• Backup and restore to a single file, optionally protected with a password, to keep a copy or move to a new phone.
+
+Free and open source under the GNU AGPL-3.0 license.
+
+Important: Jadwal is a reminder and record-keeping tool, not medical advice. It does not check doses, interactions or schedules. Always follow your doctor's or pharmacist's instructions, and check with them before changing any medicine.
