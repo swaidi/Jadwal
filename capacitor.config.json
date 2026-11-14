@@ -1,0 +1,11 @@
+{
+  "appId": "io.github.swaidi.jadwal",
+  "appName": "Jadwal",
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_pill",
+      "iconColor": "#0f7f7a"
+    }
+  }
+}

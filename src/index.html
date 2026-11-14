@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Jadwal</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="brand"><svg class="brand-icon" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#2A62B8"/><rect x="19" y="25" width="62" height="54" rx="10" fill="#FFFFFF"/><path d="M19 35a10 10 0 0 1 10-10h42a10 10 0 0 1 10 10v5H19z" fill="#CFDFF7"/><rect x="31" y="17" width="6" height="14" rx="3" fill="#FFFFFF"/><rect x="63" y="17" width="6" height="14" rx="3" fill="#FFFFFF"/><circle cx="34" cy="52" r="4.5" fill="#CFDFF7"/><circle cx="50" cy="52" r="4.5" fill="#CFDFF7"/><circle cx="66" cy="52" r="4.5" fill="#CFDFF7"/><g transform="rotate(-10 50 66)"><path d="M50 58.5h-13a7.5 7.5 0 0 0 0 15h13z" fill="#2A62B8"/><path d="M50 58.5h13a7.5 7.5 0 0 1 0 15H50z" fill="#E8833A"/></g></svg><h1 data-i18n="app_title">Jadwal</h1></div>
+      <p class="sub elder-hide" id="coverage"></p>
+    </div>
+    <button class="btn" id="editBtn" data-i18n="edit_plan">Edit plan</button>
+  </header>
+
+  <div class="settings" id="settingsRow">
+    <button class="toggle-btn" id="langBtn" type="button" lang="ar">العربية</button>
+    <button class="toggle-btn" id="elderBtn" type="button" aria-pressed="false">Elderly mode: Off</button>
+    <button class="toggle-btn notes-btn" id="notesBtn" type="button" data-i18n="notes_btn">📋 My Notes</button>
+    <button class="toggle-btn notes-btn" id="backupBtn" type="button" data-i18n="backup_btn">💾 Backup</button>
+  </div>
+
+  <div class="banner" data-i18n-html="banner_html"></div>
+
+  <div class="remind" id="remindBox" hidden></div>
+  <div class="offline" id="storeMsg" hidden></div>
+  <div class="remind bknotice" id="backupNotice" hidden></div>
+
+  <main id="trackView" class="stack">
+    <div class="nav elder-hide">
+      <button class="btn" id="prevWeek" data-i18n="prev_week">‹ Week</button>
+      <h2 id="dayTitle">—</h2>
+      <button class="btn" id="todayBtn" data-i18n="today">Today</button>
+      <button class="btn" id="nextWeek" data-i18n="next_week">Week ›</button>
+    </div>
+    <div class="nav elder-only">
+      <h2 id="dayTitleElder">—</h2>
+      <button class="btn" id="prevDay" data-i18n="prev_day">‹ Previous day</button>
+      <button class="btn" id="todayBtnElder" data-i18n="today">Today</button>
+      <button class="btn" id="nextDay" data-i18n="next_day">Next day ›</button>
+    </div>
+    <div class="week elder-hide" id="week" role="group" aria-label="Days of the week"></div>
+    <div class="summary" id="summary"></div>
+    <section class="slots" id="slots" aria-label="Doses for the selected day"></section>
+
+    <details class="open-items" id="questionsBox">
+      <summary><span data-i18n="q_title"></span><span id="questionsCount"></span></summary>
+      <div id="questionsList"></div>
+    </details>
+
+    <p class="foot elder-hide" data-i18n-html="tags_html"></p>
+    <p class="foot" data-i18n="data_foot"></p>
+    <div class="row foot"><span id="versionText"></span><button class="btn small" id="updateBtn" type="button" data-i18n="update_app">Update app</button></div>
+  </main>
+
+  <section id="editView" class="stack" hidden aria-label="Edit plan"></section>
+  <section id="notesView" class="stack" hidden aria-label="My Notes"></section>
+  <section id="backupView" class="stack" hidden aria-label="Backup and restore"></section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

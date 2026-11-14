@@ -1,0 +1,9 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Capsule rotated 45 degrees, drawn as two halves -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M4.22,12.36 L12.36,4.22 C14.31,2.27 17.48,2.27 19.43,4.22 C21.38,6.17 21.38,9.34 19.43,11.29 L15.89,14.83 L9.17,8.11 L5.64,11.64 C4.86,12.42 4.86,13.69 5.64,14.47 L4.22,13.05 Z"/>
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M8.11,9.17 L14.83,15.89 L11.29,19.43 C9.34,21.38 6.17,21.38 4.22,19.43 C2.27,17.48 2.27,14.31 4.22,12.36 Z"/>
+</vector>

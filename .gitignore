@@ -1,0 +1,7 @@
+node_modules/
+www/
+.DS_Store
+
+# Signing keys never belong in this repository
+*.keystore
+*.jks
