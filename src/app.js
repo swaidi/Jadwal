@@ -561,13 +561,13 @@ function renderRemindBox(){
   }
   const missing=[];
   if(!remindState.overlay) missing.push([t("allow_overlay"),t("rb_overlay"),()=>DoseAlarm.openOverlaySettings()]);
+  if(!remindState.exact) missing.unshift([t("allow_exact"),t("rb_exact"),()=>DoseAlarm.openExactAlarmSettings()]);
   if(!remindState.fullScreen) missing.push([t("allow_fs"),t("rb_fs"),()=>DoseAlarm.openFullScreenSettings()]);
   if(missing.length){
     box.classList.add("bad");
     missing.forEach(([label,txt,fn])=>{ add("<b>"+escapeHtml(txt)+"</b>"); btn(label,async()=>{try{await fn();}catch(_){} }); });
     return;
   }
-  if(!remindState.exact){ box.classList.add("bad"); add(t("rb_exact_html")); return; }
   if(remindState.error){ box.classList.add("bad"); add(t("rb_error_html",{e:escapeHtml(remindState.error)})); btn(t("try_again"),scheduleReminders); return; }
   const until=remindState.until?remindState.until.toLocaleDateString(LOCALE(),{weekday:"short",day:"numeric",month:"short"}):null;
   const rep=Number(r.repeatMin)||10;

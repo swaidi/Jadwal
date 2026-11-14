@@ -249,3 +249,13 @@ Object.assign(STR.ar, {
   rp_meds:"الأدوية والجرعات (كما أُدخلت)", rp_src_reported:"أدخلها المريض (غير مؤكدة من طبيب)",
   rp_questions:"أسئلة المريض", rp_footer:"أُنشئ بواسطة تطبيق جدول. الجرعات هي الخطة كما أدخلها المريض، وليست وصفة طبية."
 });
+
+// Exact-alarm permission is granted by the person (Google Play policy).
+Object.assign(STR.en, {
+  allow_exact:"Allow exact alarms",
+  rb_exact:"So each alert arrives at the exact minute, allow “Alarms & reminders” for Jadwal."
+});
+Object.assign(STR.ar, {
+  allow_exact:"السماح بالمنبهات الدقيقة",
+  rb_exact:"لكي يصل كل تنبيه في دقيقته المحددة، اسمح بـ«المنبهات والتذكيرات» لتطبيق جدول."
+});

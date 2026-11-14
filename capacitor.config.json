@@ -6,6 +6,10 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_pill",
       "iconColor": "#0f7f7a"
+    },
+    "SystemBars": {
+      "insetsHandling": "native",
+      "initialViewportFitValueHint": "cover"
     }
   }
 }

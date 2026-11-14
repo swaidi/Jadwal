@@ -402,6 +402,15 @@ public class DoseAlarmPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Opens Android's "Alarms & reminders" setting so dose alerts can fire at the exact minute. */
+    @PluginMethod
+    public void openExactAlarmSettings(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            open(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getContext().getPackageName())));
+        }
+        call.resolve();
+    }
+
     @PluginMethod
     public void openUrl(PluginCall call) {
         String url = call.getString("url", "");

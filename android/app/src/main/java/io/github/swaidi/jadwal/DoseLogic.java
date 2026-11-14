@@ -14,6 +14,12 @@ import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
+import android.graphics.PixelFormat;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -199,17 +205,43 @@ public final class DoseLogic {
             setAlarm(c, key, at, next);
         }
 
-        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c)) {
-            try {
-                Intent i = new Intent(c, AlarmActivity.class);
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
-                c.startActivity(i);
-            } catch (Exception ignored) {}
-        }
+        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c)) launchAlert(c);
     }
 
     static void postNotification(Context c, String key, JSONObject d, int attempt) {
         postNotification(c, key, d, attempt, false);
+    }
+
+    /**
+     * Opens the full-screen alert over whatever is on screen. On Android 15 and later the system lets an app
+     * with "Display over other apps" start a screen from the background only while one of its overlay windows
+     * is showing, so a tiny invisible overlay is added for a moment around the launch.
+     */
+    static void launchAlert(Context c) {
+        View tmp = null;
+        WindowManager wm = null;
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && Settings.canDrawOverlays(c)) {
+                wm = (WindowManager) c.getSystemService(Context.WINDOW_SERVICE);
+                tmp = new View(c.getApplicationContext());
+                WindowManager.LayoutParams lp = new WindowManager.LayoutParams(1, 1,
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        PixelFormat.TRANSLUCENT);
+                lp.gravity = Gravity.TOP | Gravity.START;
+                wm.addView(tmp, lp);
+            }
+        } catch (Exception e) { tmp = null; }
+        try {
+            Intent i = new Intent(c, AlarmActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
+            c.startActivity(i);
+        } catch (Exception ignored) {}
+        if (tmp != null) {
+            final View v = tmp;
+            final WindowManager w = wm;
+            new Handler(Looper.getMainLooper()).postDelayed(() -> { try { w.removeView(v); } catch (Exception ignored) {} }, 2000);
+        }
     }
 
     static void postNotification(Context c, String key, JSONObject d, int attempt, boolean silent) {

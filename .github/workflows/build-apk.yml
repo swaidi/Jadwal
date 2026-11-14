@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Install and bundle web app
         run: |
@@ -39,7 +39,7 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/jadwal.keystore"
           echo "JADWAL_KEYSTORE_FILE=$RUNNER_TEMP/jadwal.keystore" >> "$GITHUB_ENV"
 
-      - name: Build signed APK
+      - name: Build signed APK and Play bundle
         working-directory: android
         env:
           JADWAL_KEYSTORE_PASSWORD: ${{ secrets.JADWAL_KEYSTORE_PASSWORD }}
@@ -47,19 +47,23 @@ jobs:
           JADWAL_KEY_PASSWORD: ${{ secrets.JADWAL_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
       - name: Remove signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/jadwal.keystore"
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk Jadwal-${{ github.run_number }}.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk Jadwal-${{ github.run_number }}.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab Jadwal-${{ github.run_number }}.aab
 
       - uses: actions/upload-artifact@v4
         with:
           name: Jadwal-apk
-          path: Jadwal-${{ github.run_number }}.apk
+          path: |
+            Jadwal-${{ github.run_number }}.apk
+            Jadwal-${{ github.run_number }}.aab
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -69,5 +73,9 @@ jobs:
           body: |
             Install **Jadwal-${{ github.run_number }}.apk** on your Android phone. Each release installs over the previous one and keeps your data.
             ثبّت الملف **Jadwal-${{ github.run_number }}.apk** على هاتفك. كل إصدار يُثبَّت فوق السابق ويحتفظ ببياناتك.
-          files: Jadwal-${{ github.run_number }}.apk
+
+            The .aab file is the bundle for uploading to Google Play; it cannot be installed directly.
+          files: |
+            Jadwal-${{ github.run_number }}.apk
+            Jadwal-${{ github.run_number }}.aab
           make_latest: true

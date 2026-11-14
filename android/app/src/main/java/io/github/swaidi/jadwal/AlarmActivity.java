@@ -29,6 +29,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
 import org.json.JSONObject;
 
 import java.io.File;
@@ -144,6 +149,14 @@ public class AlarmActivity extends Activity {
 
         scroll.addView(root);
         setContentView(scroll);
+        // Android 15+ draws edge to edge: pad for the status bar, navigation bar and keyboard.
+        ViewCompat.setOnApplyWindowInsetsListener(scroll, (v, insets) -> {
+            Insets b = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.ime() | WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(b.left, b.top, b.right, b.bottom);
+            return WindowInsetsCompat.CONSUMED;
+        });
+        new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView()).setAppearanceLightStatusBars(false);
+        new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView()).setAppearanceLightNavigationBars(false);
         render();
     }
 
