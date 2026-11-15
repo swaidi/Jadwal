@@ -105,6 +105,7 @@ public class AlarmActivity extends Activity {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         scale = DoseLogic.elderly(this) ? 1.3f : 1f;
+        dark = DoseLogic.darkTheme(this);
         scroll = new ScrollView(this);
         if (DoseLogic.rtl(this)) scroll.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         scroll.setBackgroundColor(Color.parseColor("#0B3B3A"));
@@ -315,7 +316,7 @@ public class AlarmActivity extends Activity {
         box.setMinLines(4);
         box.setGravity(Gravity.TOP | Gravity.START);
         box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20 * scale);
-        box.setTextColor(Color.parseColor("#17242A"));
+        box.setTextColor(Color.parseColor(C("#17242A")));
         box.setBackground(rounded("#FFFFFF", "#4A5D63"));
         box.setPadding(dp(12), dp(12), dp(12), dp(12));
         LinearLayout.LayoutParams blp = matchWrap();
@@ -541,6 +542,21 @@ public class AlarmActivity extends Activity {
         return String.format(Locale.US, "%d:%02d", s / 60, s % 60);
     }
 
+    /** Card colors follow the app theme: soft cream when light, dark slate when dark. */
+    private boolean dark;
+    private String C(String hex) {
+        switch (hex.toUpperCase(java.util.Locale.ROOT)) {
+            case "#F4FBFA": return dark ? "#172225" : "#FBF8F2";
+            case "#FFFFFF": return dark ? "#0F1719" : "#FFFDF8";
+            case "#17242A": return dark ? "#E6EEF0" : hex;
+            case "#4A5D63": return dark ? "#9DB0B6" : hex;
+            case "#5A6B72": return dark ? "#9DB0B6" : hex;
+            case "#0F7F7A": return dark ? "#4CC7BF" : hex;
+            case "#1D7A3E": return dark ? "#6FD393" : hex;
+            default: return hex;
+        }
+    }
+
     private LinearLayout panel() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -554,9 +570,9 @@ public class AlarmActivity extends Activity {
 
     private GradientDrawable rounded(String fill, String stroke) {
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.parseColor(fill));
+        bg.setColor(Color.parseColor(C(fill)));
         bg.setCornerRadius(dp(16));
-        if (stroke != null) bg.setStroke(dp(2), Color.parseColor(stroke));
+        if (stroke != null) bg.setStroke(dp(2), Color.parseColor(C(stroke)));
         return bg;
     }
 
@@ -575,7 +591,7 @@ public class AlarmActivity extends Activity {
         t.setText(s);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp * scale);
         t.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
-        t.setTextColor(Color.parseColor(color));
+        t.setTextColor(Color.parseColor(C(color)));
         if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         return t;
     }

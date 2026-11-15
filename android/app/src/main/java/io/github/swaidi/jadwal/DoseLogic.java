@@ -65,6 +65,14 @@ public final class DoseLogic {
     }
     static boolean rtl(Context c) { return "ar".equals(prefs(c).getString("lang", "en")); }
     static boolean elderly(Context c) { return prefs(c).getBoolean("elderly", false); }
+    /** Theme chosen in the app: auto follows the phone. */
+    static boolean darkTheme(Context c) {
+        String th = prefs(c).getString("theme", "auto");
+        if ("dark".equals(th)) return true;
+        if ("light".equals(th)) return false;
+        return (c.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
 
     static long repeatMs(Context c) { return Math.max(1, prefs(c).getInt("repeatMin", 10)) * 60000L; }
 

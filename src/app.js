@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { App } from "@capacitor/app";
@@ -11,7 +11,8 @@ const SOURCE_IDS = ["reported","confirmed","unconfirmed"];
 const PATTERN_IDS = ["daily","alternate","confirm"];
 
 /* ---------- Language and display mode ---------- */
-let ui = {lang:"en", elderly:false, ack:false, tested:false, guideHidden:false};
+let ui = {lang:"en", elderly:false, ack:false, tested:false, guideHidden:false, theme:"auto"};
+const THEME_IDS = ["auto","light","dark"];
 const t = (key, vars)=>{ let s=(STR[ui.lang]&&STR[ui.lang][key]); if(s==null) s=STR.en[key]; if(s==null) s=key;
   if(vars) for(const k in vars) s=s.split("{"+k+"}").join(vars[k]); return s; };
 const AR = ()=>ui.lang==="ar";
@@ -43,7 +44,7 @@ let events = [];
 async function loadState(){
   try{
     const u=await Preferences.get({key:"ui"});
-    if(u.value){ const v=JSON.parse(u.value)||{}; ui.lang=v.lang==="ar"?"ar":"en"; ui.elderly=!!v.elderly; ui.ack=!!v.ack; ui.tested=!!v.tested; ui.guideHidden=!!v.guideHidden; }
+    if(u.value){ const v=JSON.parse(u.value)||{}; ui.lang=v.lang==="ar"?"ar":"en"; ui.elderly=!!v.elderly; ui.ack=!!v.ack; ui.tested=!!v.tested; ui.guideHidden=!!v.guideHidden; ui.theme=THEME_IDS.includes(v.theme)?v.theme:"auto"; }
     const p=await Preferences.get({key:"plan"});
     if(p.value){const v=JSON.parse(p.value); if(v&&Array.isArray(v.meds)) plan=v;}
     else await Preferences.set({key:"plan",value:JSON.stringify(plan)});
@@ -169,10 +170,19 @@ function applyUi(){
   const root=document.documentElement;
   root.lang=ui.lang; root.dir=AR()?"rtl":"ltr";
   root.classList.toggle("elder",ui.elderly);
+  applyTheme();
   document.title=t("app_title");
   document.querySelectorAll("[data-i18n]").forEach(e=>{ e.textContent=t(e.getAttribute("data-i18n")); });
   document.querySelectorAll("[data-i18n-html]").forEach(e=>{ e.innerHTML=t(e.getAttribute("data-i18n-html")); });
   renderBanner();
+}
+// Theme: "auto" follows the phone; light and dark are fixed. Status-bar icons follow the page.
+let lastBars=null;
+function applyTheme(){
+  const root=document.documentElement;
+  if(ui.theme==="auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme",ui.theme);
+  const style=ui.theme==="light"?SystemBarsStyle.Light:ui.theme==="dark"?SystemBarsStyle.Dark:SystemBarsStyle.Default;
+  if(NATIVE && style!==lastBars){ lastBars=style; try{ SystemBars.setStyle({style}).catch(()=>{}); }catch(_){} }
 }
 // The full disclaimer shows until the person confirms it once; after that a one-line reminder stays.
 function renderBanner(){
@@ -545,7 +555,7 @@ async function doSchedule(){
   remindState.count=list.length; remindState.until=lastDay; remindState.error="";
   if(NATIVE){
     const r=plan.reminders||DEFAULT_REMINDERS;
-    try{ await DoseAlarm.setAlarms({alarms:list, repeatMin:Math.max(1,Number(r.repeatMin)||10), lang:ui.lang, elderly:ui.elderly, labels:nativeLabels(), sound:r.sound||"normal", display:r.display||"full"}); }
+    try{ await DoseAlarm.setAlarms({alarms:list, repeatMin:Math.max(1,Number(r.repeatMin)||10), lang:ui.lang, elderly:ui.elderly, theme:ui.theme, labels:nativeLabels(), sound:r.sound||"normal", display:r.display||"full"}); }
     catch(e){ remindState.error=String(e&&e.message||e); }
   }
   renderRemindBox();
@@ -683,6 +693,8 @@ function renderSettings(){
   card(t("set_lang"),[el("div",{class:"row"},[
     toggle("English",!AR(),()=>{ ui.lang="en"; persistUi(); render(); scheduleReminders(); }),
     toggle("العربية",AR(),()=>{ ui.lang="ar"; persistUi(); render(); scheduleReminders(); })])]);
+  card(t("set_theme"),[el("div",{class:"row"},THEME_IDS.map(id=>
+    toggle(t("th_"+id),ui.theme===id,()=>{ ui.theme=id; persistUi(); render(); scheduleReminders(); })))]);
   card(t("set_elder"),[el("p",{class:"ed-intro",text:t("set_elder_hint")}),el("div",{class:"row"},[
     toggle(t("off"),!ui.elderly,()=>{ ui.elderly=false; persistUi(); render(); scheduleReminders(); }),
     toggle(t("on"),ui.elderly,()=>{ ui.elderly=true; persistUi(); render(); scheduleReminders(); })])]);
@@ -1209,7 +1221,7 @@ async function applyBackup(b, notesDir){
   questions=Array.isArray(d.questions)?d.questions.filter(x=>typeof x==="string"):[];
   logs=d.logs&&typeof d.logs==="object"?d.logs:{};
   events=(Array.isArray(d.events)?d.events:[]).map(e=>e.audio&&notesDir?Object.assign({},e,{audio:notesDir+"/"+base(e.audio)}):e);
-  if(d.ui){ ui.lang=d.ui.lang==="ar"?"ar":"en"; ui.elderly=!!d.ui.elderly; }
+  if(d.ui){ ui.lang=d.ui.lang==="ar"?"ar":"en"; ui.elderly=!!d.ui.elderly; if(THEME_IDS.includes(d.ui.theme)) ui.theme=d.ui.theme; }
   await Preferences.set({key:"logs",value:JSON.stringify(logs)});
   await Preferences.set({key:"events",value:JSON.stringify(events)});
   await Preferences.set({key:"ui",value:JSON.stringify(ui)});

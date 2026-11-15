@@ -343,6 +343,7 @@ public class DoseAlarmPlugin extends Plugin {
         DoseLogic.prefs(c).edit()
                 .putString("lang", call.getString("lang", "en"))
                 .putBoolean("elderly", Boolean.TRUE.equals(call.getBoolean("elderly", false)))
+                .putString("theme", DoseLogic.pick(call.getString("theme", "auto"), new String[]{"auto", "light", "dark"}, "auto"))
                 .putString("sound", DoseLogic.pick(call.getString("sound", "normal"), DoseLogic.SOUNDS, "normal"))
                 .putString("display", DoseLogic.pick(call.getString("display", "full"), DoseLogic.DISPLAYS, "full"))
                 .apply();

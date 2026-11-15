@@ -11,7 +11,7 @@ body{margin:0}
 
 /* Layout: a single day read top to bottom as time-of-day slots, like a pill organizer; a week strip above for navigation; a separate edit view for the plan. */
 :root{
-  --bg:#f3f6f6; --surface:#ffffff; --fg:#17242a; --muted:#5a6b72; --line:#d6e0e2;
+  --bg:#efebe3; --surface:#fbf8f2; --fg:#1f2a2e; --muted:#5d6763; --line:#ddd5c8;
   --teal:#0f7f7a; --teal-soft:#dff2f0;
   --blue:#2a62b8; --blue-soft:#e3ecfa;
   --orange:#b85a12; --orange-soft:#fbeadc;
@@ -285,3 +285,5 @@ input::placeholder{color:color-mix(in srgb,var(--muted) 70%,transparent)}
 .bar{box-shadow:0 -6px 16px rgba(0,0,0,.06);z-index:5}
 #editView{padding-bottom:8px}
 .noplan{display:none!important}
+:root[data-theme="light"]{color-scheme:light}
+html.elder[data-theme="dark"]{--muted:#c3d2d6}

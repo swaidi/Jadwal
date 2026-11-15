@@ -345,3 +345,7 @@ Object.assign(STR.ar, {
   n_ch_alarm:"تنبيهات الجرعات – صوت منبّه", n_ch_normal:"تنبيهات الجرعات", n_ch_vibrate:"تنبيهات الجرعات – اهتزاز فقط", n_ch_silent:"تنبيهات الجرعات – صامت",
   n_ch_quiet:"هادئ", n_ch_desc:"تنبيهات الأدوية التي تعود حتى تجيب عليها"
 });
+
+// Theme
+Object.assign(STR.en, { set_theme:"Theme", th_auto:"Automatic", th_light:"☀ Light", th_dark:"☾ Dark" });
+Object.assign(STR.ar, { set_theme:"المظهر", th_auto:"تلقائي", th_light:"☀ فاتح", th_dark:"☾ داكن" });
