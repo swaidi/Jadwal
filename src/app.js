@@ -11,7 +11,7 @@ const SOURCE_IDS = ["reported","confirmed","unconfirmed"];
 const PATTERN_IDS = ["daily","alternate","confirm"];
 
 /* ---------- Language and display mode ---------- */
-let ui = {lang:"en", elderly:false};
+let ui = {lang:"en", elderly:false, ack:false, tested:false, guideHidden:false};
 const t = (key, vars)=>{ let s=(STR[ui.lang]&&STR[ui.lang][key]); if(s==null) s=STR.en[key]; if(s==null) s=key;
   if(vars) for(const k in vars) s=s.split("{"+k+"}").join(vars[k]); return s; };
 const AR = ()=>ui.lang==="ar";
@@ -23,7 +23,8 @@ const doseDir = s=>/[\u0600-\u06FF]/.test(s||"")?"rtl":"ltr";
 const isNoDose = s=>/^(no dose|لا جرعة|بدون جرعة)$/i.test((s||"").trim());
 
 /* ---------- Starting plan: empty; each person adds their own medicines ---------- */
-const DEFAULT_REMINDERS = {enabled:true, repeatMin:10, stopAfterMin:120};
+const DEFAULT_REMINDERS = {enabled:true, repeatMin:10, stopAfterMin:120, sound:"normal", display:"full"};
+const SOUND_IDS = ["alarm","normal","vibrate","silent"], DISPLAY_IDS = ["full","banner","quiet"];
 function ymdLocal(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function makeEmptyPlan(){
   const today=new Date(), end=new Date(today.getFullYear()+1,today.getMonth(),today.getDate());
@@ -42,11 +43,11 @@ let events = [];
 async function loadState(){
   try{
     const u=await Preferences.get({key:"ui"});
-    if(u.value){ const v=JSON.parse(u.value)||{}; ui.lang=v.lang==="ar"?"ar":"en"; ui.elderly=!!v.elderly; }
+    if(u.value){ const v=JSON.parse(u.value)||{}; ui.lang=v.lang==="ar"?"ar":"en"; ui.elderly=!!v.elderly; ui.ack=!!v.ack; ui.tested=!!v.tested; ui.guideHidden=!!v.guideHidden; }
     const p=await Preferences.get({key:"plan"});
     if(p.value){const v=JSON.parse(p.value); if(v&&Array.isArray(v.meds)) plan=v;}
     else await Preferences.set({key:"plan",value:JSON.stringify(plan)});
-    if(!plan.reminders) plan.reminders={...DEFAULT_REMINDERS};
+    plan.reminders=Object.assign({...DEFAULT_REMINDERS},plan.reminders||{});
     const q=await Preferences.get({key:"questions"});
     if(q.value){ const v=JSON.parse(q.value); if(Array.isArray(v)) questions=v.filter(x=>typeof x==="string"); }
     plan.meds.forEach(m=>{ if(m.remind===undefined) m.remind=true; });
@@ -171,9 +172,19 @@ function applyUi(){
   document.title=t("app_title");
   document.querySelectorAll("[data-i18n]").forEach(e=>{ e.textContent=t(e.getAttribute("data-i18n")); });
   document.querySelectorAll("[data-i18n-html]").forEach(e=>{ e.innerHTML=t(e.getAttribute("data-i18n-html")); });
-  const lb=$("langBtn"); lb.textContent=t("lang_toggle"); lb.lang=AR()?"en":"ar";
-  const eb=$("elderBtn"); eb.textContent=ui.elderly?t("elder_on"):t("elder_off"); eb.setAttribute("aria-pressed",String(ui.elderly));
+  renderBanner();
 }
+// The full disclaimer shows until the person confirms it once; after that a one-line reminder stays.
+function renderBanner(){
+  const b=$("banner"); b.textContent=""; b.className="banner"+(ui.ack?" short":"");
+  if(ui.ack){ b.textContent=t("banner_short"); return; }
+  const p=document.createElement("span"); p.innerHTML=t("banner_html");
+  const ok=document.createElement("button"); ok.type="button"; ok.className="btn small"; ok.textContent=t("banner_ok");
+  ok.addEventListener("click",()=>{ ui.ack=true; persistUi(); renderBanner(); });
+  b.append(p,ok);
+}
+// Only the main screen shows the top buttons.
+function showChrome(on){ $("settingsRow").hidden=!on; $("settingsBtn").hidden=!on; }
 
 /* ---------- Tracker view ---------- */
 function renderWeek(){
@@ -237,14 +248,15 @@ function renderEmptyPlan(wrap){
   b.addEventListener("click",startFirstMed);
   card.append(h,p,b); wrap.appendChild(card);
 }
-function newMed(){
-  return {id:"m"+Date.now().toString(36),name:"",generic:"",time:"",slotLabel:"",color:"blue",remind:true,instrNote:"",prefNote:"",openNote:"",timeConfirmed:false,
-    phases:[{start:plan.start,end:"",pattern:"daily",doses:[""],note:"",source:"reported"}]};
+function newMed(list){
+  const used=(list||[]).map(m=>m.color), color=["blue","teal","orange","purple","rose","slate"].find(c=>!used.includes(c))||"blue";
+  return {id:"m"+Date.now().toString(36),name:"",generic:"",time:"",slotLabel:"",color,remind:true,instrNote:"",prefNote:"",openNote:"",timeConfirmed:false,sound:"",display:"",
+    phases:[{start:ymd(new Date()),end:"",pattern:"daily",doses:[""],note:"",source:"reported"}]};
 }
-function startFirstMed(){ openEditor(); draft.meds.push(newMed()); renderEditor(); }
+function startFirstMed(){ openEditor(); addDraftMed(); }
 
 function renderSlots(){
-  if(!plan.meds.length){ const w=$("slots"); w.textContent=""; renderEmptyPlan(w); return; }
+  if(!plan.meds.length){ const w=$("slots"); w.textContent=""; if(!guideVisible()) renderEmptyPlan(w); return; }
   if(ui.elderly){ renderElderSlots(); return; }
   const wrap=$("slots"); wrap.textContent="";
   const next=nextDueId();
@@ -390,15 +402,19 @@ function render(){
   applyUi();
   if(!selected) selected=clampDate(new Date());
   selected=clampDate(selected);
-  $("coverage").textContent=t("coverage",{a:fmtShort(START()),b:fmtShort(END())});
   const title=(isToday(selected)?t("today_prefix"):"")+fmtLong(selected);
   $("dayTitle").textContent=title; $("dayTitleElder").textContent=title;
-  renderWeek(); renderSummary(); renderSlots(); renderRemindBox();
+  renderWeek(); renderSummary(); renderGuide(); renderSlots(); renderRemindBox();
+  // With no medicines yet, the day navigation has nothing to show.
+  document.querySelectorAll("#trackView .nav,#week,#summary").forEach(e=>e.classList.toggle("noplan",!plan.meds.length));
+  $("tagsFoot").hidden=!hasTags();
   renderBackupNotice();
   renderQuestions();
   if(notesOpen) renderNotes();
   if(backupOpen) renderBackup();
+  if(settingsOpen) renderSettings();
 }
+const hasTags = ()=>plan.meds.some(m=>m.instrNote||m.prefNote||m.openNote||m.phases.some(p=>p.note||p.source==="confirmed"||p.source==="unconfirmed"));
 
 /* ---------- Questions for my doctor ---------- */
 function persistQuestions(){ Preferences.set({key:"questions",value:JSON.stringify(questions)}).catch(e=>showStore(t("err_save",{e:(e&&e.message||e)}))); }
@@ -469,7 +485,8 @@ function buildReminderList(now){
         title: unknown?t("al_confirm_title",{name}):(name+" "+dose),
         name, dose,
         body: unknown?t("al_confirm_body",{name}):((slot?slot+". ":"")+(ins?ins+". ":"")+t("al_body_end")),
-        due: m.time, canSkip: !unknown});
+        due: m.time, canSkip: !unknown,
+        sound: SOUND_IDS.includes(m.sound)?m.sound:(r.sound||"normal"), display: DISPLAY_IDS.includes(m.display)?m.display:(r.display||"full")});
       if(!lastDay || day>lastDay) lastDay=day;
     }
   }
@@ -527,7 +544,8 @@ async function doSchedule(){
   const {list,lastDay}=buildReminderList(now);
   remindState.count=list.length; remindState.until=lastDay; remindState.error="";
   if(NATIVE){
-    try{ await DoseAlarm.setAlarms({alarms:list, repeatMin:Math.max(1,Number((plan.reminders||{}).repeatMin)||10), lang:ui.lang, elderly:ui.elderly, labels:nativeLabels()}); }
+    const r=plan.reminders||DEFAULT_REMINDERS;
+    try{ await DoseAlarm.setAlarms({alarms:list, repeatMin:Math.max(1,Number(r.repeatMin)||10), lang:ui.lang, elderly:ui.elderly, labels:nativeLabels(), sound:r.sound||"normal", display:r.display||"full"}); }
     catch(e){ remindState.error=String(e&&e.message||e); }
   }
   renderRemindBox();
@@ -545,34 +563,163 @@ async function setupNotifications(){
   }catch(_){}
 }
 
+// Permissions still missing for the chosen alert display, most important first.
+function missingPerms(){
+  const out=[];
+  if(!NATIVE) return out;
+  if(!remindState.notifications) out.push({label:t("allow_notif"),text:t("rb_notif"),fn:async()=>{ try{await LocalNotifications.requestPermissions();}catch(_){} await refreshPermissions(); if(!remindState.notifications){ try{await DoseAlarm.openFullScreenSettings();}catch(_){} } }});
+  if(!remindState.exact) out.push({label:t("allow_exact"),text:t("rb_exact"),fn:()=>DoseAlarm.openExactAlarmSettings()});
+  if(usesFullScreen()){
+    if(!remindState.overlay) out.push({label:t("allow_overlay"),text:t("rb_overlay"),fn:()=>DoseAlarm.openOverlaySettings()});
+    if(!remindState.fullScreen) out.push({label:t("allow_fs"),text:t("rb_fs"),fn:()=>DoseAlarm.openFullScreenSettings()});
+  }
+  return out;
+}
+const usesFullScreen = ()=>{ const r=plan.reminders||DEFAULT_REMINDERS; return r.display==="full"||plan.meds.some(m=>m.display==="full"); };
+const levelText = ()=>{ const r=plan.reminders||DEFAULT_REMINDERS; return t("snd_"+(r.sound||"normal"))+" · "+t("dsp_"+(r.display||"full")); };
+
 function renderRemindBox(){
   const box=$("remindBox"); box.textContent=""; box.className="remind";
   const r=plan.reminders||{};
   const add=(html)=>{const s=document.createElement("span");s.innerHTML=html;box.appendChild(s);return s};
   const btn=(txt,fn)=>{const b=document.createElement("button");b.className="btn";b.type="button";b.textContent=txt;b.addEventListener("click",fn);box.appendChild(b)};
-  const vt=$("versionText"); if(vt) vt.textContent=NATIVE?t("version",{v:(remindState.version||"?")}):"";
-  box.hidden=false;
+  box.hidden=guideVisible() || !plan.meds.length;
+  if(box.hidden) return;
   if(!NATIVE){ add(escapeHtml(t("rb_web"))); return; }
-  if(!r.enabled){ add(t("rb_off_html")); return; }
-  const after=async()=>{ await refreshPermissions(); renderRemindBox(); };
-  if(!remindState.notifications){
-    box.classList.add("bad"); add(t("rb_notif_html"));
-    btn(t("allow_notif"),async()=>{try{await LocalNotifications.requestPermissions();}catch(_){} await after(); if(!remindState.notifications){ try{await DoseAlarm.openFullScreenSettings();}catch(_){} }});
-    return;
-  }
-  const missing=[];
-  if(!remindState.overlay) missing.push([t("allow_overlay"),t("rb_overlay"),()=>DoseAlarm.openOverlaySettings()]);
-  if(!remindState.exact) missing.unshift([t("allow_exact"),t("rb_exact"),()=>DoseAlarm.openExactAlarmSettings()]);
-  if(!remindState.fullScreen) missing.push([t("allow_fs"),t("rb_fs"),()=>DoseAlarm.openFullScreenSettings()]);
+  if(!r.enabled){ add(t("rb_off_html")); btn(t("settings_btn"),openSettings); return; }
+  const missing=missingPerms();
   if(missing.length){
     box.classList.add("bad");
-    missing.forEach(([label,txt,fn])=>{ add("<b>"+escapeHtml(txt)+"</b>"); btn(label,async()=>{try{await fn();}catch(_){} }); });
+    const m=missing[0];
+    add("<b>"+escapeHtml(m.text)+"</b>"); btn(m.label,async()=>{ try{await m.fn();}catch(_){} await refreshPermissions(); render(); });
     return;
   }
   if(remindState.error){ box.classList.add("bad"); add(t("rb_error_html",{e:escapeHtml(remindState.error)})); btn(t("try_again"),scheduleReminders); return; }
   const until=remindState.until?remindState.until.toLocaleDateString(LOCALE(),{weekday:"short",day:"numeric",month:"short"}):null;
-  const rep=Number(r.repeatMin)||10;
-  add(t("rb_on_html",{n:rep})+escapeHtml(until?t("rb_until",{d:until}):t("rb_none")));
+  add(t("rb_on2_html",{lvl:escapeHtml(levelText()),n:Number(r.repeatMin)||10})+escapeHtml(until?t("rb_until",{d:until}):t("rb_none")));
+}
+
+/* ---------- Getting-started guide ---------- */
+const guideSteps = ()=>({
+  med: plan.meds.length>0,
+  perms: NATIVE && missingPerms().length===0,
+  test: !!ui.tested
+});
+function guideVisible(){
+  if(ui.guideHidden) return false;
+  const g=guideSteps(); return !(g.med && g.perms && g.test);
+}
+async function runTestAlert(){
+  ui.tested=true; persistUi();
+  if(!NATIVE){ saved("test_web"); render(); return; }
+  const r=plan.reminders||DEFAULT_REMINDERS;
+  try{ await DoseAlarm.testAlert({sound:r.sound||"normal", display:r.display||"full", title:t("test_title"), name:t("test_name"), dose:t("test_dose"), body:t("test_body"), due:hhmm(new Date())}); }catch(_){}
+  saved("test_sent"); render();
+}
+function renderGuide(){
+  const box=$("guide"); box.textContent="";
+  box.hidden=!guideVisible(); if(box.hidden) return;
+  const g=guideSteps();
+  const head=el("div",{class:"ghead"},[el("h3",{text:t("g_title")})]);
+  const lang=el("button",{type:"button",class:"btn small",text:t("lang_toggle")}); lang.lang=AR()?"en":"ar";
+  lang.addEventListener("click",()=>{ ui.lang=AR()?"en":"ar"; persistUi(); render(); scheduleReminders(); });
+  head.appendChild(lang);
+  box.appendChild(head);
+  box.appendChild(el("p",{class:"ed-intro",text:t("g_intro")}));
+  const firstOpen = !g.med ? "med" : !g.perms ? "perms" : "test";
+  const step=(id,n,title,hint,done,action)=>{
+    const li=el("div",{class:"gstep"+(done?" done":"")+(id===firstOpen?" current":"")});
+    li.appendChild(el("span",{class:"gnum",text:done?"✓":String(n)}));
+    const body=el("div",{class:"gbody"},[el("b",{text:title})]);
+    if(!done && hint) body.appendChild(el("span",{class:"ghint",text:hint}));
+    if(!done && action) body.appendChild(action);
+    li.appendChild(body); box.appendChild(li);
+  };
+  const b=(txt,fn,primary)=>{ const x=el("button",{type:"button",class:"btn"+(primary?" primary":""),text:txt}); x.addEventListener("click",fn); return x; };
+  step("med",1,t("g1_title"),t("g1_hint"),g.med,b(t("g1_btn"),startFirstMed,firstOpen==="med"));
+  let permAct=null, permHint=t("g2_hint");
+  if(!NATIVE) permHint=t("g_web");
+  else { const m=missingPerms()[0]; if(m){ permHint=m.text; permAct=b(m.label,async()=>{ try{await m.fn();}catch(_){} await refreshPermissions(); render(); },firstOpen==="perms"); } }
+  step("perms",2,t("g2_title"),permHint,g.perms,permAct);
+  step("test",3,t("g3_title"),t("g3_hint"),g.test,b(t("test_btn"),runTestAlert,firstOpen==="test"));
+  const hide=el("button",{type:"button",class:"linkbtn",text:t("g_hide")});
+  hide.addEventListener("click",()=>{ ui.guideHidden=true; persistUi(); render(); });
+  box.appendChild(hide);
+}
+
+/* ---------- Settings ---------- */
+let settingsOpen=false, settingsToBackup=false;
+function openSettings(){
+  settingsOpen=true; refreshPermissions().then(()=>{ if(settingsOpen) renderSettings(); });
+  $("trackView").hidden=true; $("settingsView").hidden=false; showChrome(false);
+  renderSettings(); window.scrollTo(0,0);
+}
+function closeSettings(){
+  settingsOpen=false; $("settingsView").hidden=true; $("trackView").hidden=false; showChrome(true); render();
+}
+function saveReminders(){ persistPlan(); scheduleReminders(); saved(); renderSettings(); }
+function choiceList(name,ids,value,labelKey,descKey,onPick){
+  const wrap=el("div",{class:"choices",role:"radiogroup"});
+  ids.forEach(id=>{
+    const inp=el("input",{type:"radio",name,id:name+"-"+id,value:id}); inp.checked=id===value;
+    inp.addEventListener("change",()=>{ if(inp.checked) onPick(id); });
+    const lab=el("label",{class:"choice",for:name+"-"+id},[inp,el("span",{class:"ctext"},[el("b",{text:t(labelKey+id)}),el("span",{text:t(descKey+id)})])]);
+    wrap.appendChild(lab);
+  });
+  return wrap;
+}
+function minuteSelect(id,label,value,options,fmt,onChange){
+  const opts=options.slice(); if(!opts.includes(value)) opts.push(value); opts.sort((a,b)=>a-b);
+  return selectField(id,label,opts.map(v=>[String(v),fmt(v)]),String(value),x=>onChange(Number(x)));
+}
+function renderSettings(){
+  const v=$("settingsView"); v.textContent="";
+  const back=el("button",{type:"button",class:"btn",text:t("back")}); back.addEventListener("click",closeSettings);
+  v.appendChild(el("div",{class:"nhead"},[el("h2",{text:t("settings_title"),style:"margin:0"}),back]));
+  const card=(title,kids)=>{ const c=el("div",{class:"ed-med setcard",style:"--c:var(--blue)"},[el("h3",{text:title})]); kids.forEach(k=>k&&c.appendChild(k)); v.appendChild(c); return c; };
+  const toggle=(txt,on,fn)=>{ const b=el("button",{type:"button",class:"toggle-btn","aria-pressed":String(!!on),text:txt}); b.addEventListener("click",fn); return b; };
+
+  // Language and display
+  card(t("set_lang"),[el("div",{class:"row"},[
+    toggle("English",!AR(),()=>{ ui.lang="en"; persistUi(); render(); scheduleReminders(); }),
+    toggle("العربية",AR(),()=>{ ui.lang="ar"; persistUi(); render(); scheduleReminders(); })])]);
+  card(t("set_elder"),[el("p",{class:"ed-intro",text:t("set_elder_hint")}),el("div",{class:"row"},[
+    toggle(t("off"),!ui.elderly,()=>{ ui.elderly=false; persistUi(); render(); scheduleReminders(); }),
+    toggle(t("on"),ui.elderly,()=>{ ui.elderly=true; persistUi(); render(); scheduleReminders(); })])]);
+
+  // Alerts
+  const r=plan.reminders;
+  const al=card(t("set_alerts"),[checkField("set-rem",t("ed_rem_on"),r.enabled,x=>{ r.enabled=x; saveReminders(); })]);
+  if(r.enabled){
+    al.appendChild(el("div",{class:"lbl",text:t("set_sound")}));
+    al.appendChild(choiceList("snd",SOUND_IDS,r.sound||"normal","snd_","snd_d_",x=>{ r.sound=x; saveReminders(); }));
+    al.appendChild(el("div",{class:"lbl",text:t("set_display")}));
+    al.appendChild(choiceList("dsp",DISPLAY_IDS,r.display||"full","dsp_","dsp_d_",x=>{ r.display=x; saveReminders(); }));
+    al.appendChild(el("div",{class:"grid2"},[
+      minuteSelect("set-rep",t("ed_rep"),Number(r.repeatMin)||10,[5,10,15,20,30,60],x=>t("min_n",{n:x}),x=>{ r.repeatMin=x; saveReminders(); }),
+      minuteSelect("set-stop",t("ed_stop"),Number(r.stopAfterMin)||0,[0,30,60,120,180,240,360],x=>x?t("min_n",{n:x}):t("no_repeat"),x=>{ r.stopAfterMin=x; saveReminders(); })]));
+    al.appendChild(el("p",{class:"ed-intro",text:t("set_permed")}));
+    missingPerms().forEach(m=>{
+      const b=el("button",{type:"button",class:"btn",text:m.label}); b.addEventListener("click",async()=>{ try{await m.fn();}catch(_){} await refreshPermissions(); renderSettings(); });
+      al.appendChild(el("div",{class:"remind bad"},[el("b",{text:m.text}),b]));
+    });
+    const tb=el("button",{type:"button",class:"btn primary bigbtn",text:t("test_btn")}); tb.addEventListener("click",runTestAlert);
+    al.appendChild(tb);
+    if(!NATIVE) al.appendChild(el("p",{class:"foot",text:t("rb_web")}));
+  }
+
+  // Backup
+  const bb=el("button",{type:"button",class:"btn bigbtn",text:t("bk_title")}); bb.addEventListener("click",()=>{ settingsToBackup=true; settingsOpen=false; $("settingsView").hidden=true; openBackup(); });
+  card(t("backup_btn"),[el("p",{class:"ed-intro",text:lastBackup?t("bk_last",{d:fmtShort(lastBackup)}):t("bk_none_yet")}),bb]);
+
+  // Guide and about
+  const gb=el("button",{type:"button",class:"btn",text:t("g_show")}); gb.addEventListener("click",()=>{ ui.guideHidden=false; ui.tested=false; persistUi(); closeSettings(); });
+  const ub=el("button",{type:"button",class:"btn",text:t("update_app")}); ub.addEventListener("click",()=>{ if(NATIVE) DoseAlarm.openUrl({url:RELEASES_URL}).catch(()=>{}); else window.open(RELEASES_URL,"_blank"); });
+  card(t("set_about"),[
+    el("p",{class:"ed-intro",text:NATIVE?t("version",{v:(remindState.version||"?")}):"Jadwal"}),
+    el("div",{class:"row"},[ub,gb]),
+    (()=>{ const p=el("p",{class:"foot"}); p.innerHTML=t("banner_html"); return p; })(),
+    el("p",{class:"foot",text:t("data_foot")})]);
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
@@ -580,10 +727,11 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":
 let draft=null, edErrors=[], confirmAction=null;
 
 function el(tag,props,kids){const e=document.createElement(tag);if(props)for(const k in props){if(k==="text")e.textContent=props[k];else e.setAttribute(k,props[k]);}(kids||[]).forEach(c=>c&&e.appendChild(c));return e}
-function textField(id,label,value,onInput,type,extraCls){
+function textField(id,label,value,onInput,type,extraCls,placeholder,hint){
   const inp=el("input",{type:type||"text",id:id}); if(extraCls) inp.className=extraCls; inp.value=value==null?"":value;
+  if(placeholder) inp.placeholder=placeholder;
   inp.addEventListener("input",()=>onInput(inp.value)); inp.addEventListener("change",()=>onInput(inp.value));
-  return el("div",{class:"field"},[el("label",{for:id,text:label}),inp]);
+  return el("div",{class:"field"},[el("label",{for:id,text:label}),inp,hint?el("small",{class:"fhint",text:hint}):null]);
 }
 function selectField(id,label,options,value,onChange){
   const s=el("select",{id:id}); options.forEach(([v,tx])=>{const o=el("option",{value:v,text:tx}); if(v===value)o.selected=true; s.appendChild(o)});
@@ -597,105 +745,130 @@ function checkField(id,label,checked,onChange){
 
 function openEditor(){
   draft=clone(plan); edErrors=[]; confirmAction=null;
-  $("trackView").hidden=true; $("editView").hidden=false; $("editBtn").hidden=true; $("settingsRow").hidden=true;
+  edOpen.clear(); if(draft.meds.length===1) edOpen.add(draft.meds[0].id);
+  $("trackView").hidden=true; $("editView").hidden=false; showChrome(false);
   renderEditor(); window.scrollTo(0,0);
 }
 function closeEditor(){
-  $("editView").hidden=true; $("trackView").hidden=false; $("editBtn").hidden=false; $("settingsRow").hidden=false;
+  $("editView").hidden=true; $("trackView").hidden=false; showChrome(true);
   draft=null; render();
 }
 
+const edOpen=new Set();
+function addDraftMed(){ const m=newMed(draft.meds); draft.meds.push(m); edOpen.add(m.id); renderEditor();
+  setTimeout(()=>{ const i=document.getElementById("m"+(draft.meds.length-1)+"-name"); if(i){ i.scrollIntoView({block:"center"}); i.focus(); } },50); }
+// A medicine with one daily dose and no special settings uses the short form.
+const isSimple = m=>!m.advanced && m.phases.length===1 && m.phases[0].pattern==="daily";
+function medSummary(m){
+  const s=m.phases[m.phases.length-1]||{}; const dose=(s.doses||[])[0]||"";
+  return [m.time||"", isSimple(m)?doseText(dose):(m.phases.length>1?t("ed_n_steps",{n:m.phases.length}):"")].filter(Boolean).join(" · ");
+}
 function renderEditor(){
   const COLORS=COLOR_IDS.map(c=>[c,t("col_"+c)]), SOURCES=SOURCE_IDS.map(s=>[s,t("src_"+s)]), PATTERNS=PATTERN_IDS.map(p=>[p,t("pat_"+p)]);
   const v=$("editView"); v.textContent="";
   v.appendChild(el("h2",{text:t("ed_title"),style:"margin:0"}));
-  v.appendChild(el("p",{class:"ed-intro",text:t("ed_intro")}));
-  if(t("ed_data_note")) v.appendChild(el("p",{class:"ed-intro",text:t("ed_data_note")}));
-
-  const rem=el("div",{class:"ed-med",style:"--c:var(--slate)"});
-  rem.appendChild(el("h3",{text:t("ed_reminders")}));
-  rem.appendChild(checkField("rem-on",t("ed_rem_on"),draft.reminders.enabled,x=>draft.reminders.enabled=x));
-  rem.appendChild(el("div",{class:"grid2"},[
-    textField("rem-rep",t("ed_rep"),draft.reminders.repeatMin,x=>draft.reminders.repeatMin=x,"number","num"),
-    textField("rem-stop",t("ed_stop"),draft.reminders.stopAfterMin,x=>draft.reminders.stopAfterMin=x,"number","num")]));
-  rem.appendChild(el("p",{class:"ed-intro",text:t("ed_rem_intro")}));
-  v.appendChild(rem);
-
-  const cov=el("div",{class:"ed-med",style:"--c:var(--slate)"});
-  cov.appendChild(el("h3",{text:t("ed_cov")}));
-  cov.appendChild(el("div",{class:"grid2"},[
-    textField("cov-s",t("ed_first"),draft.start,x=>draft.start=x,"date"),
-    textField("cov-e",t("ed_last"),draft.end,x=>draft.end=x,"date")]));
-  v.appendChild(cov);
+  v.appendChild(el("p",{class:"ed-intro",text:t(draft.meds.length?"ed_intro2":"ed_intro_empty")}));
 
   draft.meds.forEach((m,mi)=>{
-    const box=el("div",{class:"ed-med"}); box.style.setProperty("--c",cvar(m.color));
-    box.appendChild(el("h3",{text:tr(m.name)||t("ed_newmed")}));
     const p="m"+mi+"-";
-    box.appendChild(el("div",{class:"grid2"},[
-      textField(p+"name",t("ed_name"),m.name,x=>m.name=x),
-      textField(p+"gen",t("ed_gen"),m.generic,x=>m.generic=x),
-      textField(p+"time",t("ed_time"),m.time,x=>m.time=x,"time"),
-      textField(p+"slot",t("ed_slot"),m.slotLabel,x=>m.slotLabel=x),
-      selectField(p+"col",t("ed_color"),COLORS,m.color,x=>{m.color=x;renderEditor()})
-    ]));
-    box.appendChild(checkField(p+"rem",t("ed_remmed"),m.remind!==false,x=>m.remind=x));
-    box.appendChild(el("div",{class:"grid2"},[
-      textField(p+"ins",t("ed_ins"),m.instrNote,x=>m.instrNote=x),
-      textField(p+"pref",t("ed_pref"),m.prefNote,x=>m.prefNote=x),
-      textField(p+"open",t("ed_open"),m.openNote,x=>m.openNote=x)
-    ]));
-    box.appendChild(checkField(p+"tc",t("ed_tc"),m.timeConfirmed,x=>m.timeConfirmed=x));
+    const box=el("details",{class:"ed-med medbox"}); box.style.setProperty("--c",cvar(m.color));
+    if(edOpen.has(m.id)) box.open=true;
+    box.addEventListener("toggle",()=>{ if(box.open) edOpen.add(m.id); else edOpen.delete(m.id); });
+    box.appendChild(el("summary",{},[el("span",{class:"mtitle",text:tr(m.name)||t("ed_newmed")}),el("span",{class:"msub",text:medSummary(m)})]));
+    const body=el("div",{class:"medbody"}); box.appendChild(body);
 
-    const ph=el("div",{class:"phases"});
-    ph.appendChild(el("div",{class:"lbl",text:t("ed_steps")}));
-    m.phases.forEach((s,si)=>{
-      const q=p+"p"+si+"-";
-      const pb=el("div",{class:"phase"});
-      const del=el("button",{type:"button",class:"btn small danger",text:t("ed_remove_step")});
-      del.addEventListener("click",()=>{m.phases.splice(si,1);renderEditor()});
-      pb.appendChild(el("div",{class:"phase-h"},[el("span",{text:t("ed_step",{n:si+1})}),del]));
-      const fields=[
-        textField(q+"s",t("ed_from"),s.start,x=>s.start=x,"date"),
-        textField(q+"e",t("ed_to"),s.end,x=>s.end=x,"date"),
-        selectField(q+"pat",t("ed_pattern"),PATTERNS,s.pattern,x=>{s.pattern=x; if(x==="alternate"&&s.doses.length<2)s.doses.push(""); if(x!=="alternate")s.doses=[s.doses[0]||""]; renderEditor()})
-      ];
-      if(s.pattern==="alternate"){
-        fields.push(textField(q+"d0",t("ed_d0alt"),s.doses[0],x=>s.doses[0]=x));
-        fields.push(textField(q+"d1",t("ed_d1alt"),s.doses[1],x=>s.doses[1]=x));
-      }else if(s.pattern==="confirm"){
-        fields.push(textField(q+"d0",t("ed_dconfirm"),s.doses[0],x=>s.doses[0]=x));
-      }else{
-        fields.push(textField(q+"d0",t("ed_dose"),s.doses[0],x=>s.doses[0]=x));
-      }
-      fields.push(selectField(q+"src",t("ed_source"),SOURCES,s.source||"reported",x=>s.source=x));
-      pb.appendChild(el("div",{class:"grid2"},fields));
-      pb.appendChild(textField(q+"n",t("ed_note"),s.note,x=>s.note=x));
-      ph.appendChild(pb);
-    });
-    const addStep=el("button",{type:"button",class:"btn small",text:t("ed_add_step")});
-    addStep.addEventListener("click",()=>{
-      const last=m.phases[m.phases.length-1];
-      let start=draft.start; if(last&&last.end){const d=parseYmd(last.end); if(d) start=ymd(addDays(d,1));}
-      m.phases.push({start:start,end:"",pattern:"daily",doses:[""],note:"",source:"reported"}); renderEditor();
-    });
-    ph.appendChild(addStep);
-    box.appendChild(ph);
+    const nameF=textField(p+"name",t("ed_name"),m.name,x=>m.name=x,"text","",t("ph_name"));
+    const timeF=textField(p+"time",t("ed_time"),m.time,x=>m.time=x,"time");
+    if(isSimple(m)){
+      const s0=m.phases[0];
+      body.appendChild(el("div",{class:"grid2"},[nameF,
+        textField(p+"dose",t("ed_dose"),s0.doses[0],x=>s0.doses[0]=x,"text","",t("ph_dose")),
+        timeF,
+        textField(p+"start",t("ed_start"),s0.start,x=>s0.start=x,"date"),
+        textField(p+"end",t("ed_end"),s0.end,x=>s0.end=x,"date","","",t("hint_end"))]));
+    }else{
+      body.appendChild(el("div",{class:"grid2"},[nameF,timeF]));
+    }
+
+    // Dose steps: shown in full only for tapers and alternate days.
+    const stepsBox=el("div",{class:"phases"});
+    if(!isSimple(m)){
+      stepsBox.appendChild(el("div",{class:"lbl",text:t("ed_steps")}));
+      stepsBox.appendChild(el("p",{class:"ed-intro",text:t("ed_steps_hint")}));
+      m.phases.forEach((s,si)=>{
+        const q=p+"p"+si+"-";
+        const pb=el("div",{class:"phase"});
+        const del=el("button",{type:"button",class:"btn small danger",text:t("ed_remove_step")});
+        del.addEventListener("click",()=>{m.phases.splice(si,1); if(!m.phases.length) m.phases.push({start:ymd(new Date()),end:"",pattern:"daily",doses:[""],note:"",source:"reported"}); renderEditor()});
+        pb.appendChild(el("div",{class:"phase-h"},[el("span",{text:t("ed_step",{n:si+1})}),m.phases.length>1?del:null]));
+        const fields=[
+          textField(q+"s",t("ed_from"),s.start,x=>s.start=x,"date"),
+          textField(q+"e",t("ed_to"),s.end,x=>s.end=x,"date"),
+          selectField(q+"pat",t("ed_pattern"),PATTERNS,s.pattern,x=>{s.pattern=x; if(x==="alternate"&&s.doses.length<2)s.doses.push(""); if(x!=="alternate")s.doses=[s.doses[0]||""]; renderEditor()})
+        ];
+        if(s.pattern==="alternate"){
+          fields.push(textField(q+"d0",t("ed_d0alt"),s.doses[0],x=>s.doses[0]=x,"text","",t("ph_dose")));
+          fields.push(textField(q+"d1",t("ed_d1alt"),s.doses[1],x=>s.doses[1]=x,"text","",t("ph_dose2")));
+        }else if(s.pattern==="confirm"){
+          fields.push(textField(q+"d0",t("ed_dconfirm"),s.doses[0],x=>s.doses[0]=x));
+        }else{
+          fields.push(textField(q+"d0",t("ed_dose"),s.doses[0],x=>s.doses[0]=x,"text","",t("ph_dose")));
+        }
+        fields.push(selectField(q+"src",t("ed_source"),SOURCES,s.source||"reported",x=>s.source=x));
+        pb.appendChild(el("div",{class:"grid2"},fields));
+        pb.appendChild(textField(q+"n",t("ed_note"),s.note,x=>s.note=x,"text","",t("ph_note")));
+        stepsBox.appendChild(pb);
+      });
+      const addStep=el("button",{type:"button",class:"btn small",text:t("ed_add_step")});
+      addStep.addEventListener("click",()=>{
+        const last=m.phases[m.phases.length-1];
+        let start=ymd(new Date()); if(last&&last.end){const d=parseYmd(last.end); if(d) start=ymd(addDays(d,1));}
+        m.phases.push({start:start,end:"",pattern:"daily",doses:[""],note:"",source:"reported"}); renderEditor();
+      });
+      stepsBox.appendChild(addStep);
+      body.appendChild(stepsBox);
+    }
+
+    // Everything else is folded away.
+    const more=el("details",{class:"more"}); if(m._moreOpen) more.open=true;
+    more.addEventListener("toggle",()=>{ m._moreOpen=more.open; });
+    more.appendChild(el("summary",{text:t("ed_more")}));
+    const mb=el("div",{class:"medbody"}); more.appendChild(mb);
+    const same=[["",t("same_as_settings")]];
+    mb.appendChild(el("div",{class:"grid2"},[
+      textField(p+"slot",t("ed_slot"),m.slotLabel,x=>m.slotLabel=x,"text","",t("ph_slot")),
+      textField(p+"gen",t("ed_gen"),m.generic,x=>m.generic=x,"text","",t("ph_gen")),
+      textField(p+"ins",t("ed_ins"),m.instrNote,x=>m.instrNote=x,"text","",t("ph_ins")),
+      selectField(p+"col",t("ed_color"),COLORS,m.color,x=>{m.color=x;renderEditor()})]));
+    mb.appendChild(checkField(p+"rem",t("ed_remmed"),m.remind!==false,x=>{m.remind=x;renderEditor()}));
+    if(m.remind!==false) mb.appendChild(el("div",{class:"grid2"},[
+      selectField(p+"snd",t("ed_med_sound"),same.concat(SOUND_IDS.map(x=>[x,t("snd_"+x)])),m.sound||"",x=>m.sound=x),
+      selectField(p+"dsp",t("ed_med_display"),same.concat(DISPLAY_IDS.map(x=>[x,t("dsp_"+x)])),m.display||"",x=>m.display=x)]));
+    if(isSimple(m)){
+      const adv=el("button",{type:"button",class:"btn small",text:t("ed_to_steps")});
+      adv.addEventListener("click",()=>{ m.advanced=true; renderEditor(); });
+      mb.appendChild(el("div",{},[el("p",{class:"ed-intro",text:t("ed_to_steps_hint")}),adv]));
+    }
+    mb.appendChild(el("div",{class:"grid2"},[
+      textField(p+"pref",t("ed_pref"),m.prefNote,x=>m.prefNote=x),
+      textField(p+"open",t("ed_open"),m.openNote,x=>m.openNote=x,"text","",t("ph_open"))]));
+    mb.appendChild(checkField(p+"tc",t("ed_tc"),m.timeConfirmed,x=>m.timeConfirmed=x));
+    body.appendChild(more);
 
     if(confirmAction && confirmAction.type==="removeMed" && confirmAction.index===mi){
       const yes=el("button",{type:"button",class:"btn small danger",text:t("ed_remove")}); yes.addEventListener("click",()=>{draft.meds.splice(mi,1);confirmAction=null;renderEditor()});
       const no=el("button",{type:"button",class:"btn small",text:t("ed_keep")}); no.addEventListener("click",()=>{confirmAction=null;renderEditor()});
-      box.appendChild(el("div",{class:"confirmbox"},[el("span",{text:t("ed_remove_q",{name:tr(m.name)||t("ed_this_med")})}),yes,no]));
+      body.appendChild(el("div",{class:"confirmbox"},[el("span",{text:t("ed_remove_q",{name:tr(m.name)||t("ed_this_med")})}),yes,no]));
     }else{
       const rm=el("button",{type:"button",class:"btn small danger",text:t("ed_remove_med")}); rm.addEventListener("click",()=>{confirmAction={type:"removeMed",index:mi};renderEditor()});
-      box.appendChild(el("div",{class:"row"},[rm]));
+      body.appendChild(el("div",{class:"row"},[rm]));
     }
     v.appendChild(box);
   });
 
-  const addMed=el("button",{type:"button",class:"btn",text:t("ed_add_med")});
-  addMed.addEventListener("click",()=>{ const m=newMed(); m.phases[0].start=draft.start; draft.meds.push(m); renderEditor(); });
-  v.appendChild(el("div",{class:"row"},[addMed]));
+  const addMed=el("button",{type:"button",class:"btn bigbtn addmed",text:t("ed_add_med")});
+  addMed.addEventListener("click",addDraftMed);
+  v.appendChild(addMed);
 
   if(edErrors.length){const ul=el("ul",{class:"err"}); edErrors.forEach(x=>ul.appendChild(el("li",{text:x}))); v.appendChild(ul)}
 
@@ -708,13 +881,6 @@ function renderEditor(){
 
 function validate(p){
   const errs=[];
-  const s=parseYmd(p.start), e=parseYmd(p.end);
-  if(!s||!e) errs.push(t("v_cov_need"));
-  else if(e<s) errs.push(t("v_cov_order"));
-  else if(daysBetween(s,e)>730) errs.push(t("v_cov_long"));
-  const rep=Number(p.reminders.repeatMin), stop=Number(p.reminders.stopAfterMin);
-  if(!(rep>=1&&rep<=240)) errs.push(t("v_rep"));
-  if(!(stop>=0&&stop<=720)) errs.push(t("v_stop"));
   if(!p.meds.length) errs.push(t("v_nomed"));
   p.meds.forEach((m,i)=>{
     const nm=tr(m.name.trim())||t("v_medn",{n:i+1});
@@ -723,10 +889,10 @@ function validate(p){
     if(!m.phases.length) errs.push(t("v_nosteps",{m:nm}));
     m.phases.forEach((ph,j)=>{
       const a=parseYmd(ph.start), b=ph.end?parseYmd(ph.end):null, n=j+1;
-      if(!a) errs.push(t("v_start",{m:nm,n}));
+      if(!a) errs.push(isSimple(m)?t("v_start1",{m:nm}):t("v_start",{m:nm,n}));
       if(ph.end && !b) errs.push(t("v_endinv",{m:nm,n}));
       if(a&&b&&b<a) errs.push(t("v_endbefore",{m:nm,n}));
-      if(ph.pattern!=="confirm" && !(ph.doses[0]||"").trim()) errs.push(t("v_dose",{m:nm,n}));
+      if(ph.pattern!=="confirm" && !(ph.doses[0]||"").trim()) errs.push(isSimple(m)?t("v_dose1",{m:nm}):t("v_dose",{m:nm,n}));
       if(ph.pattern==="alternate" && !(ph.doses[1]||"").trim()) errs.push(t("v_dose2",{m:nm,n}));
     });
     for(let j=0;j<m.phases.length;j++)for(let k=j+1;k<m.phases.length;k++){
@@ -738,11 +904,20 @@ function validate(p){
   return errs;
 }
 
+// The tracked period runs from the earliest start (or the earlier coverage, so old logs stay visible)
+// to one year from today or the latest end date, whichever is later.
+function autoCoverage(p){
+  const today=atMidnight(new Date());
+  let a=parseYmd(p.start)||today, b=addDays(today,365);
+  p.meds.forEach(m=>m.phases.forEach(ph=>{ const s=parseYmd(ph.start), e=ph.end?parseYmd(ph.end):null; if(s&&s<a) a=s; if(e&&e>b) b=e; }));
+  if(a>today) a=today;
+  p.start=ymd(a); p.end=ymd(b);
+}
 async function savePlan(){
-  draft.meds.forEach(m=>{m.name=m.name.trim();m.phases.sort((a,b)=>(a.start||"").localeCompare(b.start||""))});
-  draft.reminders.repeatMin=Number(draft.reminders.repeatMin); draft.reminders.stopAfterMin=Number(draft.reminders.stopAfterMin);
+  draft.meds.forEach(m=>{m.name=m.name.trim();m.phases.sort((a,b)=>(a.start||"").localeCompare(b.start||"")); delete m._moreOpen;});
   edErrors=validate(draft);
-  if(edErrors.length){renderEditor(); const er=document.querySelector("#editView .err"); if(er) er.scrollIntoView({block:"center"}); return;}
+  if(edErrors.length){ draft.meds.forEach(m=>edOpen.add(m.id)); renderEditor(); const er=document.querySelector("#editView .err"); if(er) er.scrollIntoView({block:"center"}); return;}
+  autoCoverage(draft);
   plan=clone(draft);
   await persistPlan();
   closeEditor(); saved();
@@ -756,12 +931,12 @@ let audioEl=null, playingId=null;
 
 function openNotes(){
   notesOpen=true; nv.step=null; nv.msg="";
-  $("trackView").hidden=true; $("notesView").hidden=false; $("editBtn").hidden=true; $("settingsRow").hidden=true;
+  $("trackView").hidden=true; $("notesView").hidden=false; showChrome(false);
   renderNotes(); window.scrollTo(0,0);
 }
 function closeNotes(){
   stopAudio(); notesOpen=false;
-  $("notesView").hidden=true; $("trackView").hidden=false; $("editBtn").hidden=false; $("settingsRow").hidden=false;
+  $("notesView").hidden=true; $("trackView").hidden=false; showChrome(true);
   render();
 }
 
@@ -1030,7 +1205,7 @@ async function applyBackup(b, notesDir){
   const d=b.data||{};
   const base=p=>String(p).split("/").pop();
   plan=d.plan&&Array.isArray(d.plan.meds)?d.plan:makeEmptyPlan();
-  if(!plan.reminders) plan.reminders={...DEFAULT_REMINDERS};
+  plan.reminders=Object.assign({...DEFAULT_REMINDERS},plan.reminders||{});
   questions=Array.isArray(d.questions)?d.questions.filter(x=>typeof x==="string"):[];
   logs=d.logs&&typeof d.logs==="object"?d.logs:{};
   events=(Array.isArray(d.events)?d.events:[]).map(e=>e.audio&&notesDir?Object.assign({},e,{audio:notesDir+"/"+base(e.audio)}):e);
@@ -1059,12 +1234,14 @@ function renderBackupNotice(){
 
 function openBackup(){
   backupOpen=true; bk.step="home"; bk.msg=""; bk.password=""; bk.data=null;
-  $("trackView").hidden=true; $("backupView").hidden=false; $("editBtn").hidden=true; $("settingsRow").hidden=true;
+  $("trackView").hidden=true; $("backupView").hidden=false; showChrome(false);
   refreshSafety().then(renderBackup); renderBackup(); window.scrollTo(0,0);
 }
 function closeBackup(){
   backupOpen=false; bk.password=""; bk.data=null;
-  $("backupView").hidden=true; $("trackView").hidden=false; $("editBtn").hidden=false; $("settingsRow").hidden=false;
+  $("backupView").hidden=true;
+  if(settingsToBackup){ settingsToBackup=false; render(); openSettings(); return; }
+  $("trackView").hidden=false; showChrome(true);
   render();
 }
 async function refreshSafety(){ if(!NATIVE) return; try{ const r=await DoseAlarm.safetyCopyInfo(); bk.safety=r.exists?new Date(r.time):null; }catch(_){ bk.safety=null; } }
@@ -1217,16 +1394,14 @@ async function undoRestore(){
 /* ---------- Start ---------- */
 async function start(){
   $("editBtn").addEventListener("click",openEditor);
+  $("settingsBtn").addEventListener("click",openSettings);
   $("notesBtn").addEventListener("click",openNotes);
-  $("backupBtn").addEventListener("click",openBackup);
   $("prevWeek").addEventListener("click",()=>{selected=clampDate(addDays(weekStart(selected),-7));render()});
   $("nextWeek").addEventListener("click",()=>{selected=clampDate(addDays(weekStart(selected),7));render()});
   $("todayBtn").addEventListener("click",()=>{selected=clampDate(new Date());render()});
   $("prevDay").addEventListener("click",()=>{selected=clampDate(addDays(selected,-1));render()});
   $("nextDay").addEventListener("click",()=>{selected=clampDate(addDays(selected,1));render()});
   $("todayBtnElder").addEventListener("click",()=>{selected=clampDate(new Date());render()});
-  $("langBtn").addEventListener("click",()=>{ ui.lang=AR()?"en":"ar"; persistUi(); render(); scheduleReminders(); });
-  $("elderBtn").addEventListener("click",()=>{ ui.elderly=!ui.elderly; persistUi(); render(); scheduleReminders(); });
 
   await loadState();
   await loadBackupInfo();
@@ -1238,13 +1413,13 @@ async function start(){
   await takeNativeActions();
   render();
   scheduleReminders();
-  $("updateBtn").addEventListener("click",()=>{ if(NATIVE) DoseAlarm.openUrl({url:RELEASES_URL}).catch(()=>{}); else window.open(RELEASES_URL,"_blank"); });
 
   if(NATIVE){
     App.addListener("resume", async ()=>{
       await refreshPermissions();
       await takeNativeActions();
       if(!draft && !backupOpen){ selected=clampDate(new Date()); render(); }
+      else if(settingsOpen) renderSettings();
       scheduleReminders();
     });
   }

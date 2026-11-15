@@ -343,12 +343,32 @@ public class DoseAlarmPlugin extends Plugin {
         DoseLogic.prefs(c).edit()
                 .putString("lang", call.getString("lang", "en"))
                 .putBoolean("elderly", Boolean.TRUE.equals(call.getBoolean("elderly", false)))
+                .putString("sound", DoseLogic.pick(call.getString("sound", "normal"), DoseLogic.SOUNDS, "normal"))
+                .putString("display", DoseLogic.pick(call.getString("display", "full"), DoseLogic.DISPLAYS, "full"))
                 .apply();
         DoseLogic.put(c, "done", new JSONObject());
         DoseLogic.scheduleAll(c);
         JSObject ret = new JSObject();
         ret.put("count", alarms.length());
         call.resolve(ret);
+    }
+
+    /** Shows a sample alert with the given sound and display. */
+    @PluginMethod
+    public void testAlert(PluginCall call) {
+        Context c = getContext();
+        JSONObject d = new JSONObject();
+        try {
+            d.put("title", call.getString("title", "Test alert"));
+            d.put("name", call.getString("name", "Test"));
+            d.put("dose", call.getString("dose", ""));
+            d.put("body", call.getString("body", ""));
+            d.put("due", call.getString("due", ""));
+            d.put("sound", call.getString("sound", ""));
+            d.put("display", call.getString("display", ""));
+        } catch (Exception ignored) {}
+        DoseLogic.testAlert(c, d);
+        call.resolve();
     }
 
     /** Returns and clears Taken/Skip presses made outside the app. */

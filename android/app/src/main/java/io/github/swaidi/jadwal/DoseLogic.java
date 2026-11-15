@@ -158,24 +158,83 @@ public final class DoseLogic {
         JSONObject keep = new JSONObject();
         while (it.hasNext()) {
             String key = it.next();
-            if (findDose(c, key) != null && !done.has(key)) { try { keep.put(key, active.get(key)); } catch (Exception ignored) {} }
+            if (TEST_KEY.equals(key) || (findDose(c, key) != null && !done.has(key))) { try { keep.put(key, active.get(key)); } catch (Exception ignored) {} }
             else NotificationManagerCompat.from(c).cancel(reqCode(key));
         }
         put(c, "active", keep);
     }
 
-    static void ensureChannel(Context c) {
-        if (Build.VERSION.SDK_INT < 26) return;
+    /* Alert levels. Sound: alarm | normal | vibrate | silent. Display: full | banner | quiet.
+       Android fixes a channel's sound when it is created, so each sound/pop-up pair has its own channel.
+       "normal" with a pop-up keeps the original channel id, so earlier settings on that channel stay. */
+    static final String[] SOUNDS = {"alarm", "normal", "vibrate", "silent"};
+    static final String[] DISPLAYS = {"full", "banner", "quiet"};
+
+    static String pick(String v, String[] allowed, String def) {
+        for (String a : allowed) if (a.equals(v)) return v;
+        return def;
+    }
+    static String soundOf(Context c, JSONObject d) {
+        String g = pick(prefs(c).getString("sound", "normal"), SOUNDS, "normal");
+        return pick(d == null ? "" : d.optString("sound", ""), SOUNDS, g);
+    }
+    static String displayOf(Context c, JSONObject d) {
+        String g = pick(prefs(c).getString("display", "full"), DISPLAYS, "full");
+        return pick(d == null ? "" : d.optString("display", ""), DISPLAYS, g);
+    }
+
+    static void ensureChannel(Context c) { channelFor(c, "normal", "full"); }
+
+    static String channelFor(Context c, String sound, String display) {
+        boolean pop = !"quiet".equals(display);
+        String id = ("normal".equals(sound) && pop) ? CHANNEL : "dose_" + sound + (pop ? "_pop" : "_quiet");
+        if (Build.VERSION.SDK_INT < 26) return id;
         NotificationManager nm = c.getSystemService(NotificationManager.class);
-        if (nm.getNotificationChannel(CHANNEL) != null) return;
-        NotificationChannel ch = new NotificationChannel(CHANNEL, "Dose alerts", NotificationManager.IMPORTANCE_HIGH);
-        ch.setDescription("Full-screen medicine alerts that come back until you press Taken or Skip");
-        ch.enableVibration(true);
-        ch.setVibrationPattern(new long[]{0, 600, 300, 600, 300, 600});
-        ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+        if (nm.getNotificationChannel(id) != null) return id;
+        int imp = pop ? NotificationManager.IMPORTANCE_HIGH
+                : ("silent".equals(sound) ? NotificationManager.IMPORTANCE_LOW : NotificationManager.IMPORTANCE_DEFAULT);
+        String name = label(c, "ch_" + sound, defaultChannelName(sound)) + (pop ? "" : " · " + label(c, "ch_quiet", "quiet"));
+        NotificationChannel ch = new NotificationChannel(id, name, imp);
+        ch.setDescription(label(c, "ch_desc", "Medicine alerts that come back until you answer them"));
         ch.setLockscreenVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+        long[] pattern = new long[]{0, 600, 300, 600, 300, 600};
+        switch (sound) {
+            case "alarm": {
+                Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (u == null) u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                ch.setSound(u, new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                ch.enableVibration(true);
+                ch.setVibrationPattern(pattern);
+                break;
+            }
+            case "vibrate":
+                ch.setSound(null, null);
+                ch.enableVibration(true);
+                ch.setVibrationPattern(pattern);
+                break;
+            case "silent":
+                ch.setSound(null, null);
+                ch.enableVibration(false);
+                break;
+            default:
+                ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                        new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                ch.enableVibration(true);
+                ch.setVibrationPattern(pattern);
+        }
         nm.createNotificationChannel(ch);
+        return id;
+    }
+
+    static String defaultChannelName(String sound) {
+        switch (sound) {
+            case "alarm": return "Dose alerts – alarm sound";
+            case "vibrate": return "Dose alerts – vibrate only";
+            case "silent": return "Dose alerts – silent";
+            default: return "Dose alerts";
+        }
     }
 
     /** Called when an alarm fires. */
@@ -205,7 +264,7 @@ public final class DoseLogic {
             setAlarm(c, key, at, next);
         }
 
-        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c)) launchAlert(c);
+        if ("full".equals(displayOf(c, d)) && (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c))) launchAlert(c);
     }
 
     static void postNotification(Context c, String key, JSONObject d, int attempt) {
@@ -245,21 +304,29 @@ public final class DoseLogic {
     }
 
     static void postNotification(Context c, String key, JSONObject d, int attempt, boolean silent) {
-        ensureChannel(c);
+        String sound = soundOf(c, d), display = displayOf(c, d);
+        boolean pop = !"quiet".equals(display);
+        String channel = channelFor(c, sound, display);
         String title = (attempt > 0 ? label(c, "prefix", "Reminder: ") : "") + d.optString("title");
-        NotificationCompat.Builder b = new NotificationCompat.Builder(c, CHANNEL)
+        NotificationCompat.Builder b = new NotificationCompat.Builder(c, channel)
                 .setSmallIcon(R.drawable.ic_stat_pill)
                 .setContentTitle(title)
                 .setContentText(d.optString("body"))
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(d.optString("body")))
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setPriority(pop ? NotificationCompat.PRIORITY_MAX : NotificationCompat.PRIORITY_DEFAULT)
+                .setCategory("full".equals(display) || "alarm".equals(sound) ? NotificationCompat.CATEGORY_ALARM : NotificationCompat.CATEGORY_REMINDER)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setSilent(silent)
                 .setContentIntent(alertActivityPI(c));
-        if (!silent) b.setFullScreenIntent(alertActivityPI(c), true);
+        if (Build.VERSION.SDK_INT < 26 && !silent) {
+            long[] pattern = new long[]{0, 600, 300, 600, 300, 600};
+            if ("alarm".equals(sound)) { b.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), android.media.AudioManager.STREAM_ALARM); b.setVibrate(pattern); }
+            else if ("normal".equals(sound)) { b.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)); b.setVibrate(pattern); }
+            else if ("vibrate".equals(sound)) b.setVibrate(pattern);
+        }
+        if (!silent && "full".equals(display)) b.setFullScreenIntent(alertActivityPI(c), true);
         if (d.optBoolean("canSkip", true)) {
             b.addAction(0, label(c, "taken", "Taken"), buttonPI(c, key, "taken"));
             b.addAction(0, label(c, "skip", "Skip"), buttonPI(c, key, "skip"));
@@ -267,11 +334,29 @@ public final class DoseLogic {
         } else {
             b.addAction(0, label(c, "ok", "OK"), buttonPI(c, key, "dismiss"));
         }
-        // "Add note" typed straight from the notification panel.
-        RemoteInput ri = new RemoteInput.Builder(NOTE_INPUT).setLabel(label(c, "addnote", "Add note")).build();
-        b.addAction(new NotificationCompat.Action.Builder(0, label(c, "addnote", "Add note"), notePI(c, key))
-                .addRemoteInput(ri).setAllowGeneratedReplies(false).build());
+        if (!TEST_KEY.equals(key)) {
+            // "Add note" typed straight from the notification panel.
+            RemoteInput ri = new RemoteInput.Builder(NOTE_INPUT).setLabel(label(c, "addnote", "Add note")).build();
+            b.addAction(new NotificationCompat.Action.Builder(0, label(c, "addnote", "Add note"), notePI(c, key))
+                    .addRemoteInput(ri).setAllowGeneratedReplies(false).build());
+        }
         try { NotificationManagerCompat.from(c).notify(reqCode(key), b.build()); } catch (SecurityException ignored) {}
+    }
+
+    static final String TEST_KEY = "test_alert";
+
+    /** Shows a sample alert with the chosen sound and display, without logging anything. */
+    static void testAlert(Context c, JSONObject d) {
+        try {
+            d.put("key", TEST_KEY);
+            d.put("canSkip", false);
+            d.put("attempt", 0);
+            JSONObject active = getObj(c, "active");
+            active.put(TEST_KEY, d);
+            put(c, "active", active);
+        } catch (Exception ignored) {}
+        postNotification(c, TEST_KEY, d, 0, false);
+        if ("full".equals(displayOf(c, d)) && (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(c))) launchAlert(c);
     }
 
     static final String NOTE_INPUT = "note_text";
@@ -313,6 +398,7 @@ public final class DoseLogic {
         active.remove(key);
         put(c, "active", active);
         NotificationManagerCompat.from(c).cancel(reqCode(key));
+        if (TEST_KEY.equals(key)) return null;
 
         if ("snooze".equals(button)) {
             setAlarm(c, key, System.currentTimeMillis() + repeatMs(c), attempt + 1);
