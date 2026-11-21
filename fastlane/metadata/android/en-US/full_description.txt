@@ -26,6 +26,6 @@ PRIVATE BY DESIGN
 • Everything stays on your phone.
 • Backup and restore to a single file, optionally protected with a password, to keep a copy or move to a new phone.
 
-Free and open source under the GNU AGPL-3.0 license.
+Free for personal use. Business use needs approval.
 
 Important: Jadwal is a reminder and record-keeping tool, not medical advice. It does not check doses, interactions or schedules. Always follow your doctor's or pharmacist's instructions, and check with them before changing any medicine.

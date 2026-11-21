@@ -73,4 +73,9 @@ Jadwal is a reminder and record-keeping tool. It is not medical advice and does 
 - The signing key is stored only in GitHub Actions secrets (`JADWAL_KEYSTORE_B64`, `JADWAL_KEYSTORE_PASSWORD`, `JADWAL_KEY_ALIAS`, `JADWAL_KEY_PASSWORD`). Forks need their own key.
 
 ## License
-Copyright © 2026 swaidi. Licensed under the [GNU Affero General Public License v3.0](LICENSE).
+Copyright © 2026 Swaidi (trading as A.T.Grep).
+
+Free for **individuals** for personal, non-commercial use. Use by any **organization** (company,
+small business, government body, charity or school), commercial use, distributing changed versions
+and reusing the code need written approval and may involve fees. See [LICENSE.md](LICENSE.md).
+To ask, open an [issue](https://github.com/swaidi/Jadwal/issues) or email dev.oasis006@passmail.net.
