@@ -349,3 +349,21 @@ Object.assign(STR.ar, {
 // Theme
 Object.assign(STR.en, { set_theme:"Theme", th_auto:"Automatic", th_light:"☀ Light", th_dark:"☾ Dark" });
 Object.assign(STR.ar, { set_theme:"المظهر", th_auto:"تلقائي", th_light:"☀ فاتح", th_dark:"☾ داكن" });
+
+// Weekly and cycle schedules
+Object.assign(STR.en, {
+  pat_weekdays:"Days of the week", pat_cycle:"Cycle (days on, days off)",
+  ed_how:"How often", ed_days:"Take it on", ed_on:"Days on", ed_off:"Days off",
+  hint_days:"Tick one day for a weekly dose, or several (for example, Sunday to Thursday).",
+  hint_cycle:"Counted from the start date, which is the first \"on\" day. Example: 1 on, 2 off.",
+  sch_weekly:"Weekly on {d}", sch_cycle:"{on} on, {off} off",
+  v_days:"{m}: tick at least one day.", v_cycle:"{m}: days on must be 1 to 60 and days off 0 to 60."
+});
+Object.assign(STR.ar, {
+  pat_weekdays:"أيام محددة من الأسبوع", pat_cycle:"دورة (أيام أخذ، أيام توقف)",
+  ed_how:"التكرار", ed_days:"يُؤخذ يوم", ed_on:"أيام الأخذ", ed_off:"أيام التوقف",
+  hint_days:"اختر يوماً واحداً لجرعة أسبوعية، أو عدة أيام (مثلاً من الأحد إلى الخميس).",
+  hint_cycle:"تُحسب من تاريخ البدء، وهو أول يوم أخذ. مثال: يوم أخذ ويومان توقف.",
+  sch_weekly:"أسبوعياً يوم {d}", sch_cycle:"{on} أخذ، {off} توقف",
+  v_days:"{m}: اختر يوماً واحداً على الأقل.", v_cycle:"{m}: أيام الأخذ من 1 إلى 60، وأيام التوقف من 0 إلى 60."
+});

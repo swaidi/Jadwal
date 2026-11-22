@@ -8,7 +8,8 @@ const NATIVE = Capacitor.isNativePlatform();
 const DAY = 86400000;
 const COLOR_IDS = ["teal","blue","orange","purple","rose","slate"];
 const SOURCE_IDS = ["reported","confirmed","unconfirmed"];
-const PATTERN_IDS = ["daily","alternate","confirm"];
+const PATTERN_IDS = ["daily","weekdays","cycle","alternate","confirm"];
+const SHORT_PATTERNS = ["daily","weekdays","cycle"];
 
 /* ---------- Language and display mode ---------- */
 let ui = {lang:"en", elderly:false, ack:false, tested:false, guideHidden:false, theme:"auto"};
@@ -99,6 +100,7 @@ function scheduled(med, d){
   for(const p of med.phases){
     const s=parseYmd(p.start), e=p.end?parseYmd(p.end):null;
     if(!s || day<s || (e && day>e)) continue;
+    if(!isOnDay(p,s,day)) return null;
     if(p.pattern==="confirm") return {kind:"unknown",text:(p.doses[0]||"").trim()||t("confirm_fallback"),note:p.note,source:p.source||"unconfirmed"};
     const list=(p.pattern==="alternate"?p.doses:[p.doses[0]]).map(x=>(x||"").trim());
     const tx=list[daysBetween(s,day)%list.length]||"";
@@ -106,6 +108,21 @@ function scheduled(med, d){
     return {kind:"dose",text:tx,note:p.note,source:p.source};
   }
   return null;
+}
+
+// Days-of-the-week and on/off cycle patterns skip the medicine entirely on off days.
+// Weekdays use 0 = Sunday. A cycle counts from the step's start date, which is always an "on" day.
+const cycleOn = p=>Math.max(1,parseInt(p.on,10)||1), cycleOff = p=>Math.max(0,parseInt(p.off,10)||0);
+function isOnDay(p,start,day){
+  if(p.pattern==="weekdays") return Array.isArray(p.days) && p.days.includes(day.getDay());
+  if(p.pattern==="cycle"){ const on=cycleOn(p), off=cycleOff(p); return daysBetween(start,day)%(on+off)<on; }
+  return true;
+}
+const wdName = (i,style)=>new Date(2026,10,22+i).toLocaleDateString(LOCALE(),{weekday:style||"short"});
+function scheduleText(p){
+  if(p.pattern==="weekdays"){ const d=(p.days||[]).slice().sort(); return d.length===7?t("pat_daily"):d.length===1?t("sch_weekly",{d:wdName(d[0],"long")}):d.map(i=>wdName(i)).join(AR()?"، ":", "); }
+  if(p.pattern==="cycle") return t("sch_cycle",{on:cycleOn(p),off:cycleOff(p)});
+  return "";
 }
 
 // Stored status values stay in English; only their display is translated.
@@ -742,6 +759,7 @@ function el(tag,props,kids){const e=document.createElement(tag);if(props)for(con
 function textField(id,label,value,onInput,type,extraCls,placeholder,hint){
   const inp=el("input",{type:type||"text",id:id}); if(extraCls) inp.className=extraCls; inp.value=value==null?"":value;
   if(placeholder) inp.placeholder=placeholder;
+  if(!type||type==="text") inp.dir="auto";
   inp.addEventListener("input",()=>onInput(inp.value)); inp.addEventListener("change",()=>onInput(inp.value));
   return el("div",{class:"field"},[el("label",{for:id,text:label}),inp,hint?el("small",{class:"fhint",text:hint}):null]);
 }
@@ -770,10 +788,42 @@ const edOpen=new Set();
 function addDraftMed(){ const m=newMed(draft.meds); draft.meds.push(m); edOpen.add(m.id); renderEditor();
   setTimeout(()=>{ const i=document.getElementById("m"+(draft.meds.length-1)+"-name"); if(i){ i.scrollIntoView({block:"center"}); i.focus(); } },50); }
 // A medicine with one daily dose and no special settings uses the short form.
-const isSimple = m=>!m.advanced && m.phases.length===1 && m.phases[0].pattern==="daily";
+const isSimple = m=>!m.advanced && m.phases.length===1 && SHORT_PATTERNS.includes(m.phases[0].pattern);
 function medSummary(m){
   const s=m.phases[m.phases.length-1]||{}; const dose=(s.doses||[])[0]||"";
-  return [m.time||"", isSimple(m)?doseText(dose):(m.phases.length>1?t("ed_n_steps",{n:m.phases.length}):"")].filter(Boolean).join(" · ");
+  return [m.time||"", isSimple(m)?doseText(dose):(m.phases.length>1?t("ed_n_steps",{n:m.phases.length}):""), isSimple(m)?scheduleText(s):""].filter(Boolean).join(" · ");
+}
+// Extra fields for the "days of the week" and "cycle" patterns.
+function scheduleFields(s,q){
+  if(s.pattern==="weekdays"){
+    if(!Array.isArray(s.days)) s.days=[];
+    const wrap=el("div",{class:"field wdays"},[el("div",{class:"lbl",text:t("ed_days")})]);
+    const row=el("div",{class:"daypick"});
+    [0,1,2,3,4,5,6].forEach(i=>{
+      const on=s.days.includes(i);
+      const b=el("button",{type:"button",class:"daybtn","aria-pressed":String(on),text:wdName(i),title:wdName(i,"long")});
+      b.addEventListener("click",()=>{ s.days=on?s.days.filter(x=>x!==i):s.days.concat(i).sort(); renderEditor(); });
+      row.appendChild(b);
+    });
+    wrap.appendChild(row);
+    wrap.appendChild(el("small",{class:"fhint",text:t("hint_days")}));
+    return [wrap];
+  }
+  if(s.pattern==="cycle"){
+    if(s.on==null) s.on=1; if(s.off==null) s.off=1;
+    return [el("div",{class:"grid2 cyc"},[
+      textField(q+"on",t("ed_on"),s.on,x=>s.on=x===""?"":Number(x),"number"),
+      textField(q+"off",t("ed_off"),s.off,x=>s.off=x===""?"":Number(x),"number")]),
+      el("small",{class:"fhint",text:t("hint_cycle")})];
+  }
+  return [];
+}
+function setPattern(s,x){
+  s.pattern=x;
+  if(x==="alternate"&&s.doses.length<2) s.doses.push("");
+  if(x!=="alternate") s.doses=[s.doses[0]||""];
+  if(x==="weekdays"&&!Array.isArray(s.days)) s.days=[new Date().getDay()];
+  renderEditor();
 }
 function renderEditor(){
   const COLORS=COLOR_IDS.map(c=>[c,t("col_"+c)]), SOURCES=SOURCE_IDS.map(s=>[s,t("src_"+s)]), PATTERNS=PATTERN_IDS.map(p=>[p,t("pat_"+p)]);
@@ -786,7 +836,7 @@ function renderEditor(){
     const box=el("details",{class:"ed-med medbox"}); box.style.setProperty("--c",cvar(m.color));
     if(edOpen.has(m.id)) box.open=true;
     box.addEventListener("toggle",()=>{ if(box.open) edOpen.add(m.id); else edOpen.delete(m.id); });
-    box.appendChild(el("summary",{},[el("span",{class:"mtitle",text:tr(m.name)||t("ed_newmed")}),el("span",{class:"msub",text:medSummary(m)})]));
+    box.appendChild(el("summary",{},[el("span",{class:"mtitle",text:tr(m.name)||t("ed_newmed")}),el("span",{class:"msub",text:medSummary(m),dir:"auto"})]));
     const body=el("div",{class:"medbody"}); box.appendChild(body);
 
     const nameF=textField(p+"name",t("ed_name"),m.name,x=>m.name=x,"text","",t("ph_name"));
@@ -798,6 +848,8 @@ function renderEditor(){
         timeF,
         textField(p+"start",t("ed_start"),s0.start,x=>s0.start=x,"date"),
         textField(p+"end",t("ed_end"),s0.end,x=>s0.end=x,"date","","",t("hint_end"))]));
+      body.appendChild(selectField(p+"how",t("ed_how"),SHORT_PATTERNS.map(x=>[x,t("pat_"+x)]),s0.pattern,x=>setPattern(s0,x)));
+      scheduleFields(s0,p).forEach(f=>body.appendChild(f));
     }else{
       body.appendChild(el("div",{class:"grid2"},[nameF,timeF]));
     }
@@ -816,7 +868,7 @@ function renderEditor(){
         const fields=[
           textField(q+"s",t("ed_from"),s.start,x=>s.start=x,"date"),
           textField(q+"e",t("ed_to"),s.end,x=>s.end=x,"date"),
-          selectField(q+"pat",t("ed_pattern"),PATTERNS,s.pattern,x=>{s.pattern=x; if(x==="alternate"&&s.doses.length<2)s.doses.push(""); if(x!=="alternate")s.doses=[s.doses[0]||""]; renderEditor()})
+          selectField(q+"pat",t("ed_pattern"),PATTERNS,s.pattern,x=>setPattern(s,x))
         ];
         if(s.pattern==="alternate"){
           fields.push(textField(q+"d0",t("ed_d0alt"),s.doses[0],x=>s.doses[0]=x,"text","",t("ph_dose")));
@@ -828,6 +880,7 @@ function renderEditor(){
         }
         fields.push(selectField(q+"src",t("ed_source"),SOURCES,s.source||"reported",x=>s.source=x));
         pb.appendChild(el("div",{class:"grid2"},fields));
+        scheduleFields(s,q).forEach(f=>pb.appendChild(f));
         pb.appendChild(textField(q+"n",t("ed_note"),s.note,x=>s.note=x,"text","",t("ph_note")));
         stepsBox.appendChild(pb);
       });
@@ -906,6 +959,9 @@ function validate(p){
       if(a&&b&&b<a) errs.push(t("v_endbefore",{m:nm,n}));
       if(ph.pattern!=="confirm" && !(ph.doses[0]||"").trim()) errs.push(isSimple(m)?t("v_dose1",{m:nm}):t("v_dose",{m:nm,n}));
       if(ph.pattern==="alternate" && !(ph.doses[1]||"").trim()) errs.push(t("v_dose2",{m:nm,n}));
+      if(ph.pattern==="weekdays" && !(ph.days||[]).length) errs.push(t("v_days",{m:nm}));
+      if(ph.pattern==="cycle"){ const on=Number(ph.on), off=Number(ph.off);
+        if(!(Number.isInteger(on)&&on>=1&&on<=60&&Number.isInteger(off)&&off>=0&&off<=60)) errs.push(t("v_cycle",{m:nm})); }
     });
     for(let j=0;j<m.phases.length;j++)for(let k=j+1;k<m.phases.length;k++){
       const A=m.phases[j],B=m.phases[k];
@@ -1155,6 +1211,7 @@ function buildReport(lang,a,b,medF,withAudio){
         let what;
         if(ph.pattern==="confirm") what=t("rp_confirm");
         else if(ph.pattern==="alternate") what=t("rp_alt",{a:doseText((ph.doses[0]||"").trim())||"?",b:isNoDose(ph.doses[1])?t("no_dose"):doseText((ph.doses[1]||"").trim())});
+        else if(ph.pattern==="weekdays"||ph.pattern==="cycle") what=doseText((ph.doses[0]||"").trim())+" — "+scheduleText(ph);
         else what=t("rp_daily",{d:doseText((ph.doses[0]||"").trim())});
         const src=ph.pattern==="confirm"?"unconfirmed":(ph.source||"reported");
         add("li",range+": "+what+" — "+t("rp_src_"+src)+(ph.note?". "+tr(ph.note):""));
